@@ -1,0 +1,8 @@
+name = "cbnu-books"
+main = "src/index.js"
+compatibility_date = "2025-01-01"
+
+# 정적 자산(public/)을 Worker 가 직접 서빙. /api/* 외 모든 요청은 여기서 처리.
+[assets]
+directory = "public"
+binding = "ASSETS"

@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>충북대 장서검색 · 가볍게</title>
+    <meta name="description" content="충북대학교 도서관 장서를 빠르고 가볍게 검색합니다." />
+    <link rel="stylesheet" href="/style.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="wrap">
+        <a class="brand" href="/">
+          <span class="brand-mark">📚</span>
+          <span class="brand-text">충북대 장서검색<small>가볍게</small></span>
+        </a>
+        <form id="searchForm" class="searchbar" autocomplete="off">
+          <select id="field" aria-label="검색 범위">
+            <option value="all">전체</option>
+            <option value="title">제목</option>
+            <option value="author">저자</option>
+            <option value="publisher">출판사</option>
+          </select>
+          <input
+            id="q"
+            type="search"
+            placeholder="검색어를 입력하세요 (예: 소년이 온다)"
+            aria-label="검색어"
+            autofocus
+          />
+          <button type="submit" aria-label="검색">검색</button>
+        </form>
+      </div>
+    </header>
+
+    <main class="wrap" id="main">
+      <div id="meta" class="meta" hidden>
+        <span id="count"></span>
+        <label class="sort">
+          정렬
+          <select id="sort">
+            <option value="score">관련도순</option>
+            <option value="PUBLISH_YEAR">출판연도순</option>
+            <option value="TITLE">제목순</option>
+            <option value="AUTHOR">저자순</option>
+          </select>
+        </label>
+      </div>
+
+      <div id="status" class="status"></div>
+      <ul id="results" class="results"></ul>
+      <nav id="pager" class="pager" hidden></nav>
+    </main>
+
+    <footer class="foot wrap">
+      <p>
+        데이터 출처:
+        <a href="https://cbnul.chungbuk.ac.kr" target="_blank" rel="noopener"
+          >충북대학교 도서관</a
+        >
+        · 비공식 경량 검색 클라이언트
+      </p>
+    </footer>
+
+    <!-- 상세 모달 -->
+    <div id="modal" class="modal" hidden>
+      <div class="modal-backdrop" data-close></div>
+      <div class="modal-panel" role="dialog" aria-modal="true" aria-labelledby="m-title">
+        <button class="modal-close" data-close aria-label="닫기">✕</button>
+        <div id="modal-body"></div>
+      </div>
+    </div>
+
+    <script src="/app.js"></script>
+  </body>
+</html>

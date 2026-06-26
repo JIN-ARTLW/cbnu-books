@@ -1,0 +1,13 @@
+{
+  "name": "cbnul-lite",
+  "version": "0.1.0",
+  "private": true,
+  "description": "충북대학교 도서관 경량 장서검색",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy"
+  },
+  "devDependencies": {
+    "wrangler": "^3.90.0"
+  }
+}
