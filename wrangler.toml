@@ -6,3 +6,10 @@ compatibility_date = "2025-01-01"
 [assets]
 directory = "public"
 binding = "ASSETS"
+
+# Rate limiting 바인딩(베타, unsafe). 캐시 미스 시 IP당 120회/60초.
+[[unsafe.bindings]]
+name = "RATE_LIMITER"
+type = "ratelimit"
+namespace_id = "1001"
+simple = { limit = 120, period = 60 }

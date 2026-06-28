@@ -18,19 +18,30 @@ const COLLECTION = "2"; // 전체 장서
 const ALLOWED_FIELDS = new Set(["all", "title", "author", "publisher"]);
 const ALLOWED_SORTS = new Set(["score", "PUBLISH_YEAR", "TITLE", "AUTHOR"]);
 
-const CORS = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "GET, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type",
+// 보안 헤더. CSP는 외부 표지(img https:)와 인라인 onerror/style('unsafe-inline')을
+// 허용해 앱이 깨지지 않게 하면서, 외부 스크립트·object·클릭재킹은 막는다.
+const SECURITY = {
+  "Content-Security-Policy":
+    "default-src 'self'; base-uri 'self'; object-src 'none'; " +
+    "frame-ancestors 'none'; form-action 'self'; " +
+    "img-src 'self' https: data:; style-src 'self' 'unsafe-inline'; " +
+    "script-src 'self' 'unsafe-inline'; connect-src 'self'",
+  "X-Content-Type-Options": "nosniff",
+  "Referrer-Policy": "strict-origin-when-cross-origin",
+  "X-Frame-Options": "DENY",
 };
 
-function json(data, { status = 200, maxAge = 0 } = {}) {
+function json(data, { status = 200, maxAge = 0, swr = 0 } = {}) {
+  // stale-while-revalidate: TTL이 지나도 엣지가 stale을 즉시 주고 뒤에서 갱신 → 체감 지연 제거.
+  const cc = maxAge
+    ? `public, max-age=${maxAge}${swr ? `, stale-while-revalidate=${swr}` : ""}`
+    : "no-store";
   return new Response(JSON.stringify(data), {
     status,
     headers: {
       "Content-Type": "application/json; charset=utf-8",
-      "Cache-Control": maxAge ? `public, max-age=${maxAge}` : "no-store",
-      ...CORS,
+      "Cache-Control": cc,
+      ...SECURITY,
     },
   });
 }
@@ -43,7 +54,7 @@ async function upstreamGet(path) {
       // 도서관 서버가 가끔 빈 UA 를 막으므로 평범한 값을 보낸다.
       "User-Agent": "Mozilla/5.0 (cbnul-lite proxy)",
     },
-    cf: { cacheTtl: 60, cacheEverything: true },
+    cf: { cacheTtl: 180, cacheEverything: true },
   });
   if (!res.ok) throw new Error(`upstream ${res.status}`);
   return res.json();
@@ -89,15 +100,28 @@ async function handleSearch(url) {
       ? data.totalCount
       : 0;
 
+  // 자료유형 우선순위로 페이지 내 재정렬: 국내단행본 → (전자책·서양서·기타 단행본) → 나머지.
+  // (Pyxis 정렬 결과를 유형 묶음으로만 재배치, 묶음 안 순서는 유지 = 안정 정렬)
+  const items = list.map(normalizeBiblio);
+  items.sort((a, b) => typeRank(a.type) - typeRank(b.type));
+
   return json(
     {
       total,
       page,
       size,
-      items: list.map(normalizeBiblio),
+      items,
     },
-    { maxAge: 60 }
+    { maxAge: 180, swr: 600 }
   );
+}
+
+// 자료유형 정렬 순위(작을수록 먼저).
+function typeRank(type) {
+  const t = type || "";
+  if (t === "국내단행본") return 0;
+  if (t === "전자책" || t.includes("단행본")) return 1; // 전자책·서양서단행본·기타 단행본
+  return 2; // 정기간행물·학위논문·비도서 등
 }
 
 async function handleBiblio(id) {
@@ -118,7 +142,7 @@ async function handleBiblio(id) {
       // content 는 책 소개가 아니라 MARC 레코드라 파싱해서 의미있는 항목만.
       marc: parseMarc(rec.content),
     },
-    { maxAge: 600 }
+    { maxAge: 1800, swr: 86400 }
   );
 }
 
@@ -156,7 +180,8 @@ function parseMarc(content) {
   ];
   const links = df("856")
     .map((f) => ({ label: sv(f, "3") || sv(f, "z") || "관련 링크", url: sv(f, "u") }))
-    .filter((l) => l.url);
+    // http(s) 링크만 허용 (javascript:/data: 등 위험 스킴 차단)
+    .filter((l) => /^https?:\/\//i.test(l.url));
 
   return {
     physical: clean(first("300")), // 형태사항 (예: 215 p. ; 22 cm)
@@ -180,6 +205,56 @@ function cleanThumb(u) {
   return null;
 }
 
+/**
+ * 중앙도서관 청구기호(KDC 분류번호) → 층/자료실 위치.
+ * (현장 안내판 기준. 중앙도서관에만 적용 — 타 분관은 건물이 달라 알 수 없음.)
+ *   000 총류·100 철학·600 예술 → 4층 4-3·4
+ *   400 자연·500 기술          → 4층 4-1·2
+ *   200 종교                   → 3층 3-3
+ *   300 사회과학               → 3층 3-3·4
+ *   700 언어·900 역사          → 3층 3-1
+ *   800 문학                   → 3층 3-2
+ *   서양서(저자기호가 로마자) → 전 주제 4층 4-3·4
+ */
+const KDC_FLOOR = {
+  0: { floor: "4층", room: "4-3·4 자료실" },
+  1: { floor: "4층", room: "4-3·4 자료실" },
+  2: { floor: "3층", room: "3-3 자료실" },
+  3: { floor: "3층", room: "3-3·4 자료실" },
+  4: { floor: "4층", room: "4-1·2 자료실" },
+  5: { floor: "4층", room: "4-1·2 자료실" },
+  6: { floor: "4층", room: "4-3·4 자료실" },
+  7: { floor: "3층", room: "3-1 자료실" },
+  8: { floor: "3층", room: "3-2 자료실" },
+  9: { floor: "3층", room: "3-1 자료실" },
+};
+
+function shelfLocation(callNo) {
+  if (!callNo) return null;
+  const s = callNo.trim();
+  // 별치기호(P=정기간행물, R=참고 등)로 시작하면 일반 서가와 위치가 달라 추정하지 않는다.
+  if (/^[A-Za-z]{1,3}\s+\d/.test(s)) return null;
+  const m = s.match(/^(\d+(?:\.\d+)?)\s*(\S*)/);
+  if (!m) return null;
+  // 저자기호가 로마자면 서양서 → 전 주제 4층 4-3·4
+  if (/^[A-Za-z]/.test(m[2])) return { floor: "4층", room: "4-3·4 자료실" };
+  return KDC_FLOOR[+m[1][0]] || null;
+}
+
+/**
+ * 대출상태 코드 표준화.
+ * Pyxis 의 cStateCode 는 대출가능을 "READY" 로 주는데, 프론트는 "AVAILABLE"/
+ * "NOT_AVAILABLE" 만 색으로 처리한다. 여기서 한 번에 표준 코드로 맞춘다.
+ * (정확한 한글 상태 텍스트는 cState 로 그대로 전달되니 표시는 영향 없음.)
+ */
+function canonStateCode(code, text) {
+  if (code === "READY" || code === "AVAILABLE") return "AVAILABLE";
+  if (code === "NOT_AVAILABLE") return "NOT_AVAILABLE";
+  // 알 수 없는 코드는 상태 텍스트로 추정 ("…가능" 이면 대출가능).
+  if (typeof text === "string" && text.includes("가능")) return "AVAILABLE";
+  return "NOT_AVAILABLE";
+}
+
 /** 검색 레코드에서 프론트가 쓰는 필드만 추린다. */
 function normalizeBiblio(r) {
   return {
@@ -191,29 +266,65 @@ function normalizeBiblio(r) {
     thumbnail: cleanThumb(r.thumbnailUrl),
     type: r.biblioType?.name || r.materialType?.name || "",
     received: r.dateReceived || null,
-    holdings: (r.branchVolumes || []).map((b) => ({
-      branch: b.name,
-      state: b.cState, // "대출가능" / "대출불가" ...
-      stateCode: b.cStateCode, // "AVAILABLE" / "NOT_AVAILABLE" ...
-      callNo: b.volume && b.volume !== "-" ? b.volume : null,
-    })),
+    holdings: (r.branchVolumes || []).map((b) => {
+      const callNo = b.volume && b.volume !== "-" ? b.volume : null;
+      return {
+        branch: b.name,
+        state: b.cState, // "대출가능" / "대출불가" ... (표시용 원문)
+        stateCode: canonStateCode(b.cStateCode, b.cState), // "AVAILABLE" / "NOT_AVAILABLE"
+        callNo,
+        // 층 안내판은 중앙도서관 전용이라 타 분관은 null.
+        location: b.name === "중앙도서관" ? shelfLocation(callNo) : null,
+      };
+    }),
   };
 }
 
 export default {
-  async fetch(request, env) {
+  async fetch(request, env, ctx) {
     const url = new URL(request.url);
 
     if (request.method === "OPTIONS") {
-      return new Response(null, { headers: CORS });
+      return new Response(null, { status: 204, headers: SECURITY });
     }
 
     if (url.pathname.startsWith("/api/")) {
+      // 엣지 캐시: 최종 응답을 URL 기준으로 캐싱해 반복/인기 검색을 즉시 응답한다.
+      const cache = caches.default;
+      const cacheKey = new Request(url.toString(), { method: "GET" });
+      const hit = await cache.match(cacheKey);
+      if (hit) return hit;
+
+      // Rate limit: 캐시 미스(=실제 업스트림 호출)에만 IP당 적용 → 일반 사용자엔 무영향,
+      // 남용·도서관 서버 보호용. 바인딩 미가용 시 조용히 통과(부작용 방지).
+      if (env.RATE_LIMITER) {
+        const ip = request.headers.get("cf-connecting-ip") || "anon";
+        try {
+          const { success } = await env.RATE_LIMITER.limit({ key: ip });
+          if (!success) {
+            return json(
+              { error: "요청이 너무 많습니다. 잠시 후 다시 시도하세요." },
+              { status: 429 }
+            );
+          }
+        } catch (_) {
+          /* 바인딩 문제 시 무시하고 진행 */
+        }
+      }
+
       try {
-        if (url.pathname === "/api/search") return await handleSearch(url);
-        const m = url.pathname.match(/^\/api\/biblio\/(.+)$/);
-        if (m) return await handleBiblio(m[1]);
-        return json({ error: "not found" }, { status: 404 });
+        let res;
+        if (url.pathname === "/api/search") {
+          res = await handleSearch(url);
+        } else {
+          const m = url.pathname.match(/^\/api\/biblio\/(.+)$/);
+          res = m
+            ? await handleBiblio(m[1])
+            : json({ error: "not found" }, { status: 404 });
+        }
+        // 성공 응답만 캐시에 저장(에러/빈검색 제외). 저장은 응답 반환을 막지 않게 비동기로.
+        if (res.ok) ctx.waitUntil(cache.put(cacheKey, res.clone()));
+        return res;
       } catch (err) {
         return json(
           { error: "도서관 서버 응답 오류", detail: String(err) },
@@ -222,7 +333,10 @@ export default {
       }
     }
 
-    // 정적 자산
-    return env.ASSETS.fetch(request);
+    // 정적 자산 (보안 헤더를 입혀 반환)
+    const asset = await env.ASSETS.fetch(request);
+    const out = new Response(asset.body, asset);
+    for (const [k, v] of Object.entries(SECURITY)) out.headers.set(k, v);
+    return out;
   },
 };

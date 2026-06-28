@@ -3,8 +3,12 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>충북대 장서검색 · 가볍게</title>
+    <title>CBNU Books · 충북대 장서검색</title>
     <meta name="description" content="충북대학교 도서관 장서를 빠르고 가볍게 검색합니다." />
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='88'%3E📚%3C/text%3E%3C/svg%3E"
+    />
     <link rel="stylesheet" href="/style.css" />
   </head>
   <body>
@@ -12,24 +16,31 @@
       <div class="wrap">
         <a class="brand" href="/">
           <span class="brand-mark">📚</span>
-          <span class="brand-text">충북대 장서검색<small>가볍게</small></span>
+          <span class="brand-text">CBNU Books<small>충북대 장서검색</small></span>
         </a>
-        <form id="searchForm" class="searchbar" autocomplete="off">
-          <select id="field" aria-label="검색 범위">
-            <option value="all">전체</option>
-            <option value="title">제목</option>
-            <option value="author">저자</option>
-            <option value="publisher">출판사</option>
-          </select>
-          <input
-            id="q"
-            type="search"
-            placeholder="검색어를 입력하세요 (예: 소년이 온다)"
-            aria-label="검색어"
-            autofocus
-          />
-          <button type="submit" aria-label="검색">검색</button>
-        </form>
+        <div class="search-wrap">
+          <form id="searchForm" class="searchbar" autocomplete="off">
+            <select id="field" aria-label="검색 범위">
+              <option value="all">전체</option>
+              <option value="title">제목</option>
+              <option value="author">저자</option>
+              <option value="publisher">출판사</option>
+            </select>
+            <input
+              id="q"
+              type="search"
+              placeholder="검색어를 입력하세요"
+              aria-label="검색어"
+              autocomplete="off"
+              role="combobox"
+              aria-expanded="false"
+              aria-controls="suggest"
+              autofocus
+            />
+            <button type="submit" aria-label="검색">검색</button>
+          </form>
+          <ul id="suggest" class="suggest" role="listbox" aria-label="연관 도서" hidden></ul>
+        </div>
       </div>
     </header>
 
@@ -48,6 +59,34 @@
       </div>
 
       <div id="status" class="status"></div>
+
+      <!-- 시작화면 안내: 검색 전에만 노출 -->
+      <section id="intro" class="intro">
+        <h2 class="intro-title">중앙도서관 층별 자료실 안내</h2>
+        <div class="floors">
+          <div class="floor f3">
+            <span class="floor-tag">3층</span>
+            <ul class="floor-list">
+              <li><span class="rm">3-1</span><span>언어(700) · 역사(900)</span></li>
+              <li><span class="rm">3-2</span><span>문학(800)</span></li>
+              <li><span class="rm">3-3</span><span>종교(200) · 사회과학(300)</span></li>
+              <li><span class="rm">3-4</span><span>사회과학(300)</span></li>
+              <li><span class="rm">북스토리</span><span>충BOOK 100선</span></li>
+            </ul>
+          </div>
+          <div class="floor f4">
+            <span class="floor-tag">4층</span>
+            <ul class="floor-list">
+              <li><span class="rm">4-1·2</span><span>자연과학(400) · 기술과학(500)</span></li>
+              <li><span class="rm">4-3·4</span><span>총류(000) · 철학(100) · 예술(600) · 서양서(전 주제)</span></li>
+            </ul>
+          </div>
+        </div>
+        <p class="intro-note">
+          청구기호로 층·자료실을 자동 안내하며, 실제 배치와 다를 수 있습니다.
+        </p>
+      </section>
+
       <ul id="results" class="results"></ul>
       <nav id="pager" class="pager" hidden></nav>
     </main>
