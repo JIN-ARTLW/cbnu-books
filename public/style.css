@@ -299,6 +299,308 @@ a {
   filter: brightness(1.07);
 }
 
+/* ---- 대출 목록 버튼(상단바) ---- */
+.cart-btn {
+  position: relative;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  border-radius: 999px;
+  cursor: pointer;
+  box-shadow: var(--shadow);
+  transition: border-color 0.12s, transform 0.12s;
+}
+.cart-btn:hover {
+  border-color: var(--accent);
+}
+.cart-btn:active {
+  transform: scale(0.94);
+}
+.cart-ico {
+  font-size: 18px;
+  line-height: 1;
+}
+.cart-badge {
+  position: absolute;
+  top: -5px;
+  right: -5px;
+  min-width: 19px;
+  height: 19px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--on-accent);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 19px;
+  text-align: center;
+}
+.cart-btn.empty .cart-badge {
+  display: none;
+}
+
+/* 담기 버튼 — 카드 우측 상단의 작은 원형 */
+.cart-add {
+  flex: none;
+  align-self: flex-start;
+  width: 30px;
+  height: 30px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--muted);
+  border-radius: 50%;
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+}
+.cart-add:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.cart-add.on {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--on-accent);
+}
+/* 상세 모달용 넓은 버튼 */
+.cart-add.btn-wide {
+  width: auto;
+  height: auto;
+  align-self: auto;
+  margin-top: 12px;
+  padding: 7px 16px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+/* ---- 대출 목록 모달 ---- */
+.cart-title {
+  margin: 0 0 4px;
+  font-size: 19px;
+}
+.cart-n {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--muted);
+}
+.cart-sub {
+  margin: 0 0 18px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.cart-empty {
+  padding: 34px 8px;
+  text-align: center;
+  font-size: 14px;
+  line-height: 1.9;
+  color: var(--muted);
+}
+.cart-group + .cart-group {
+  margin-top: 18px;
+}
+.cart-group-head {
+  --gc: var(--muted);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 5px 0 5px 11px;
+  border-left: 4px solid var(--gc);
+  margin-bottom: 6px;
+}
+.cart-group-head.f3 {
+  --gc: #a16207;
+}
+.cart-group-head.f4 {
+  --gc: #2f7fd1;
+}
+.cart-group-name {
+  font-size: 14px;
+  font-weight: 700;
+}
+.cart-group-n {
+  font-size: 12px;
+  color: var(--muted);
+}
+.cart-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.cart-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 9px 0;
+  border-bottom: 1px solid var(--line);
+}
+.c-cover {
+  flex: 0 0 34px;
+  width: 34px;
+  height: 48px;
+  border-radius: 4px;
+  object-fit: cover;
+  background: var(--surface-2);
+}
+.c-cover.ph {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  color: var(--muted);
+}
+.c-meta {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.c-title {
+  font-size: 14px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.c-by {
+  font-size: 12px;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.c-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 2px;
+}
+.c-call {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--accent);
+  background: var(--accent-weak);
+  border-radius: 5px;
+  padding: 1px 7px;
+  font-feature-settings: "tnum";
+}
+.c-state {
+  font-size: 11px;
+  color: var(--muted);
+  background: var(--surface-2);
+  border-radius: 5px;
+  padding: 1px 7px;
+}
+.c-state.ok {
+  color: var(--ok);
+  background: var(--ok-bg);
+}
+.c-state.no {
+  color: var(--no);
+  background: var(--no-bg);
+}
+.c-del {
+  flex: none;
+  width: 26px;
+  height: 26px;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 12px;
+}
+.c-del:hover {
+  background: var(--surface-2);
+  color: var(--no);
+}
+
+.cart-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 22px;
+}
+.cart-actions button {
+  border: 1px solid var(--accent);
+  background: var(--accent);
+  color: var(--on-accent);
+  border-radius: 999px;
+  padding: 8px 18px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.cart-actions button:hover:not(:disabled) {
+  filter: brightness(1.07);
+}
+.cart-actions button:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+.cart-actions button.ghost {
+  margin-left: auto;
+  border-color: var(--line);
+  background: transparent;
+  color: var(--muted);
+  font-weight: 500;
+}
+.cart-actions button.ghost:hover {
+  color: var(--no);
+  border-color: var(--no);
+}
+.cart-preview {
+  margin-top: 18px;
+}
+.cart-preview img {
+  display: block;
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+.cart-dl {
+  display: inline-block;
+  margin-top: 12px;
+  font-size: 13px;
+  font-weight: 600;
+}
+.cart-note {
+  margin: 6px 0 0;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+/* ---- 토스트 ---- */
+.toast {
+  position: fixed;
+  left: 50%;
+  bottom: 28px;
+  z-index: 80;
+  transform: translate(-50%, 10px);
+  background: var(--text);
+  color: var(--bg);
+  font-size: 13px;
+  font-weight: 500;
+  padding: 9px 16px;
+  border-radius: 999px;
+  box-shadow: var(--shadow);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.18s ease, transform 0.18s ease;
+}
+.toast.show {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+
 /* ---- 결과 메타/정렬 ---- */
 .meta {
   display: flex;
@@ -436,6 +738,54 @@ a {
 .card:hover {
   border-color: var(--accent);
   transform: translateY(-1px);
+}
+
+/* 로딩 자리표시자 — 빈 화면 대신 결과와 같은 높이의 회색 카드 */
+.card.skel {
+  cursor: default;
+  pointer-events: none;
+}
+.card.skel:hover {
+  border-color: var(--line);
+  transform: none;
+}
+.card.skel .cover,
+.sk-line {
+  background: linear-gradient(
+    90deg,
+    var(--surface-2) 25%,
+    color-mix(in srgb, var(--surface-2) 55%, var(--surface)) 50%,
+    var(--surface-2) 75%
+  );
+  background-size: 300% 100%;
+  animation: shimmer 1.3s linear infinite;
+}
+.sk-line {
+  display: block;
+  height: 12px;
+  border-radius: 5px;
+  margin-bottom: 9px;
+}
+.sk-line.w30 {
+  width: 30%;
+}
+.sk-line.w80 {
+  width: 80%;
+  height: 15px;
+}
+.sk-line.w50 {
+  width: 50%;
+}
+@keyframes shimmer {
+  to {
+    background-position: -300% 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .card.skel .cover,
+  .sk-line {
+    animation: none;
+  }
 }
 .cover {
   flex: 0 0 64px;
@@ -720,6 +1070,19 @@ a {
   .card {
     padding: 12px;
     gap: 12px;
+  }
+  .cart-btn {
+    width: 36px;
+    height: 36px;
+  }
+  .cart-add {
+    width: 27px;
+    height: 27px;
+    font-size: 14px;
+  }
+  .cart-actions button {
+    padding: 8px 14px;
+    font-size: 13px;
   }
   .cover {
     flex-basis: 52px;

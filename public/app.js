@@ -18,9 +18,67 @@ const el = {
 };
 
 const PAGE_SIZE = 20;
-// 마지막 검색 결과 캐시(id -> item). 상세 모달이 소장정보를 재활용한다.
+// 마지막 검색 결과 캐시(id -> item). 상세 모달과 담기 버튼이 소장정보를 재활용한다.
 const itemCache = new Map();
+window.itemCache = itemCache; // cart.js 가 담을 때 참조
 let state = { q: "", field: "all", sort: "score", page: 1 };
+
+/* ---------- 네트워크 (메모리 캐시 + 프리페치) ---------- */
+/*
+ * 같은 URL 은 한 번만 가져온다. 자동완성이 이미 받아온 응답을 검색 실행이 그대로
+ * 재사용하도록 URL 을 searchUrl() 하나로 통일한 게 핵심 — 엔터를 눌러도 네트워크가
+ * 아예 발생하지 않는다. (엣지 캐시까지 못 가고 여기서 끝남)
+ */
+const NET_TTL = 120000;
+const netCache = new Map(); // url -> { t, data }
+const inflight = new Map(); // url -> Promise (동시 중복 요청 합치기)
+
+async function getJSON(url) {
+  const hit = netCache.get(url);
+  if (hit && Date.now() - hit.t < NET_TTL) return hit.data;
+  if (inflight.has(url)) return inflight.get(url);
+
+  const p = (async () => {
+    const res = await fetch(url);
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "요청에 실패했습니다.");
+    netCache.set(url, { t: Date.now(), data });
+    if (netCache.size > 80) netCache.delete(netCache.keys().next().value);
+    return data;
+  })();
+  inflight.set(url, p);
+  try {
+    return await p;
+  } finally {
+    inflight.delete(url);
+  }
+}
+
+/** 캐시에 이미 있으면 그 자리에서 꺼낸다(동기). 없으면 null. */
+function peekJSON(url) {
+  const hit = netCache.get(url);
+  return hit && Date.now() - hit.t < NET_TTL ? hit.data : null;
+}
+
+/** 검색 URL. 자동완성·검색·프리페치가 **반드시** 같은 문자열을 만들어야 캐시가 공유된다. */
+function searchUrl(q, field, sort, page) {
+  return (
+    "/api/search?" +
+    new URLSearchParams({
+      q: q.trim(),
+      field,
+      sort,
+      page: String(page),
+      size: String(PAGE_SIZE),
+    })
+  );
+}
+
+const idle = window.requestIdleCallback || ((fn) => setTimeout(fn, 1));
+function prefetch(url) {
+  if (peekJSON(url) || inflight.has(url)) return;
+  idle(() => getJSON(url).catch(() => {}));
+}
 
 /* ---------- 유틸 ---------- */
 function esc(s) {
@@ -84,29 +142,51 @@ async function search() {
     return;
   }
   el.intro.hidden = true;
-  el.status.textContent = "검색 중…";
   el.status.className = "status";
-  el.results.innerHTML = "";
+
+  const url = searchUrl(state.q, state.field, state.sort, state.page);
+
+  // 자동완성이 이미 받아둔 결과면 즉시 그린다 (네트워크·깜빡임 없음).
+  const cached = peekJSON(url);
+  if (cached) {
+    el.status.textContent = "";
+    renderResults(cached);
+    return;
+  }
+
+  el.status.textContent = "";
+  el.results.innerHTML = skeletonHtml();
   el.pager.hidden = true;
 
-  const p = new URLSearchParams({
-    q: state.q,
-    field: state.field,
-    sort: state.sort,
-    page: state.page,
-    size: PAGE_SIZE,
-  });
-
+  const seq = ++searchSeq;
   try {
-    const res = await fetch("/api/search?" + p.toString());
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || "검색 실패");
+    const data = await getJSON(url);
+    if (seq !== searchSeq) return; // 더 최근 검색이 시작됐으면 버린다
     renderResults(data);
   } catch (err) {
+    if (seq !== searchSeq) return;
     el.meta.hidden = true;
+    el.results.innerHTML = "";
     el.status.textContent = "오류: " + err.message;
     el.status.className = "status error";
   }
+}
+
+let searchSeq = 0;
+
+// 결과를 기다리는 동안의 자리표시자. 빈 화면보다 체감이 빠르고 레이아웃도 안 튄다.
+function skeletonHtml() {
+  return Array.from(
+    { length: 6 },
+    () => `<li class="card skel" aria-hidden="true">
+      <div class="cover"></div>
+      <div class="card-body">
+        <span class="sk-line w30"></span>
+        <span class="sk-line w80"></span>
+        <span class="sk-line w50"></span>
+      </div>
+    </li>`
+  ).join("");
 }
 
 function renderResults(data) {
@@ -125,6 +205,12 @@ function renderResults(data) {
   el.results.innerHTML = data.items.map(cardHtml).join("");
   fitCallNos();
   renderPager(data.total);
+  Cart.syncButtons();
+
+  // 다음 페이지를 미리 받아둔다 → 페이지 넘김이 즉시.
+  if (state.page * PAGE_SIZE < data.total) {
+    prefetch(searchUrl(state.q, state.field, state.sort, state.page + 1));
+  }
 }
 
 // 청구기호가 타입칩 옆 남은 폭을 넘치면 줄바꿈 대신 글자 크기를 줄여 한 줄에 맞춘다.
@@ -181,6 +267,8 @@ function cardHtml(it) {
   }</p>
       <div class="holdings">${holds || ""}</div>
     </div>
+    <button class="cart-add" data-cart="${it.id}" type="button"
+            aria-label="대출 목록에 담기"></button>
   </li>`;
 }
 
@@ -221,8 +309,7 @@ async function openDetail(id) {
 
   let d = {};
   try {
-    const res = await fetch("/api/biblio/" + id);
-    if (res.ok) d = await res.json();
+    d = await getJSON("/api/biblio/" + id);
   } catch (_) {
     /* 상세 실패해도 검색결과 정보로 표시 */
   }
@@ -311,6 +398,7 @@ async function openDetail(id) {
         ${publication ? `<p class="detail-meta">${esc(publication)}</p>` : ""}
         ${isbn ? `<p class="detail-meta">ISBN ${esc(isbn)}</p>` : ""}
         ${factsHtml}
+        <button class="cart-add btn-wide" data-cart="${esc(id)}" type="button"></button>
       </div>
     </div>
 
@@ -328,6 +416,8 @@ async function openDetail(id) {
        href="https://cbnul.chungbuk.ac.kr/#/search/detail/${id}">
       충북대 도서관에서 보기 ↗
     </a>`;
+
+  Cart.syncButtons();
 }
 
 function showModal(show) {
@@ -372,8 +462,15 @@ el.pager.addEventListener("click", (e) => {
 });
 
 el.results.addEventListener("click", (e) => {
+  if (e.target.closest("[data-cart]")) return; // 담기 버튼은 상세를 열지 않는다
   const card = e.target.closest(".card");
   if (card) openDetail(card.dataset.id);
+});
+
+// 카드에 마우스를 올리면 상세를 미리 받아둔다 → 클릭 시 모달이 바로 채워진다.
+el.results.addEventListener("pointerover", (e) => {
+  const card = e.target.closest(".card[data-id]");
+  if (card) prefetch("/api/biblio/" + card.dataset.id);
 });
 el.results.addEventListener("keydown", (e) => {
   if (e.key === "Enter" || e.key === " ") {
@@ -399,7 +496,6 @@ window.addEventListener("popstate", () => {
 
 /* ---------- 연관 도서 자동완성 ---------- */
 let sgTimer = null;
-let sgController = null;
 let sgItems = [];
 let sgActive = -1;
 let sgSeq = 0; // 요청 시퀀스. 닫히거나 새 요청이 시작되면 늦게 온 응답을 무효화.
@@ -416,16 +512,21 @@ el.q.addEventListener("input", () => {
 
 async function fetchSuggest(q) {
   const seq = ++sgSeq;
+  // 검색 실행과 **완전히 같은 URL**로 요청한다. 그래야 엔터를 눌렀을 때 응답이
+  // 이미 메모리에 있어 네트워크 없이 즉시 결과가 그려진다. (상위 6개만 노출)
+  const url = searchUrl(q, state.field, state.sort, 1);
+
+  const cached = peekJSON(url);
+  if (cached) {
+    sgItems = (cached.items || []).slice(0, 6);
+    renderSuggest();
+    return;
+  }
+
   try {
-    if (sgController) sgController.abort();
-    sgController = new AbortController();
-    // 넉넉히 받아(유형정렬 적용됨) 단행본이 위로 오게 한 뒤 상위 6개만 노출.
-    const p = new URLSearchParams({ q, field: state.field, size: 20 });
-    const res = await fetch("/api/search?" + p.toString(), {
-      signal: sgController.signal,
-    });
-    if (!res.ok) return;
-    const data = await res.json();
+    // 일부러 abort 하지 않는다 — 이 응답이 곧 실행될 검색과 같은 URL 이라,
+    // 끝까지 받아 캐시에 넣어두는 편이 이득이다. 늦게 온 응답은 seq 로 걸러낸다.
+    const data = await getJSON(url);
     // 그 사이 닫혔거나(엔터/Esc) 새 요청이 시작됐거나 입력이 바뀌면 무시
     if (seq !== sgSeq || el.q.value.trim() !== q) return;
     sgItems = (data.items || []).slice(0, 6);
@@ -497,9 +598,8 @@ async function chooseSuggest(id) {
 }
 
 function hideSuggest() {
-  sgSeq++; // 진행 중 응답·대기 중 디바운스를 무효화
+  sgSeq++; // 진행 중 응답·대기 중 디바운스를 무효화(요청 자체는 캐시용으로 끝까지 둔다)
   clearTimeout(sgTimer);
-  if (sgController) sgController.abort();
   el.suggest.hidden = true;
   el.suggest.innerHTML = "";
   sgItems = [];
@@ -513,7 +613,14 @@ function moveSuggest(d) {
   [...el.suggest.children].forEach((li, i) =>
     li.setAttribute("aria-selected", String(i === sgActive))
   );
+  prefetch("/api/biblio/" + sgItems[sgActive].id);
 }
+
+// 드롭다운 항목에 마우스를 올리면 상세를 미리 받아둔다.
+el.suggest.addEventListener("pointerover", (e) => {
+  const li = e.target.closest("li[data-id]");
+  if (li) prefetch("/api/biblio/" + li.dataset.id);
+});
 
 el.q.addEventListener("keydown", (e) => {
   if (el.suggest.hidden) return;

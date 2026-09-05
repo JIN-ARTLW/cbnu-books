@@ -41,6 +41,10 @@
           </form>
           <ul id="suggest" class="suggest" role="listbox" aria-label="연관 도서" hidden></ul>
         </div>
+        <button id="cartBtn" class="cart-btn empty" type="button" aria-label="대출 목록">
+          <span class="cart-ico">🧺</span>
+          <span class="cart-badge" id="cartBadge">0</span>
+        </button>
       </div>
     </header>
 
@@ -110,7 +114,29 @@
       </div>
     </div>
 
+    <!-- 대출 목록 -->
+    <div id="cartModal" class="modal" hidden>
+      <div class="modal-backdrop" data-cart-close></div>
+      <div class="modal-panel" role="dialog" aria-modal="true" aria-labelledby="cart-title">
+        <button class="modal-close" data-cart-close aria-label="닫기">✕</button>
+        <h2 class="cart-title" id="cart-title">
+          빌릴 책 목록 <span id="cartCount" class="cart-n"></span>
+        </h2>
+        <p class="cart-sub">
+          자료실별로 묶어 청구기호 순으로 정렬했습니다. 이 브라우저에만 저장돼요.
+        </p>
+        <div id="cartBody"></div>
+        <div id="cartActions" class="cart-actions" hidden>
+          <button id="cartImage" type="button">🖼 이미지로 저장</button>
+          <button id="cartShare" type="button" hidden>공유하기</button>
+          <button id="cartClear" class="ghost" type="button">비우기</button>
+        </div>
+        <div id="cartPreview" class="cart-preview" hidden></div>
+      </div>
+    </div>
+
     <script src="/eggs.js"></script>
+    <script src="/cart.js"></script>
     <script src="/app.js"></script>
   </body>
 </html>

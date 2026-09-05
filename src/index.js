@@ -18,25 +18,48 @@ const COLLECTION = "2"; // 전체 장서
 const ALLOWED_FIELDS = new Set(["all", "title", "author", "publisher"]);
 const ALLOWED_SORTS = new Set(["score", "PUBLISH_YEAR", "TITLE", "AUTHOR"]);
 
+// 표지 프록시로 통과시킬 호스트(접미사 매칭). 실제 Pyxis 데이터에 등장하는 것 + 흔한 서점.
+// 아무 URL이나 열어주면 공개 이미지 프록시로 악용되므로 반드시 화이트리스트로 제한한다.
+const COVER_HOSTS = [
+  "aladin.co.kr",
+  "kakaocdn.net",
+  "pstatic.net",
+  "kyobobook.co.kr",
+  "yes24.com",
+  "nl.go.kr",
+  "chungbuk.ac.kr",
+];
+
+/**
+ * 엣지 캐시 정책.
+ * `fresh` = 이 시간 안이면 그대로 신선한 응답. 지나면 stale 을 즉시 주고 뒤에서 갱신한다.
+ * 캐시 API 자체에는 HARD_TTL 만큼 보관시켜(=Cache-Control max-age) 만료로 지워지지 않게 한다.
+ * (Workers Cache API 는 stale-while-revalidate 를 스스로 해주지 않으므로 직접 구현.)
+ */
+const HARD_TTL = 86400; // 캐시 보관 기간(초)
+const FRESH = { search: 180, biblio: 1800, cover: 604800 };
+const UPSTREAM_TIMEOUT_MS = 6000;
+
 // 보안 헤더. CSP는 외부 표지(img https:)와 인라인 onerror/style('unsafe-inline')을
 // 허용해 앱이 깨지지 않게 하면서, 외부 스크립트·object·클릭재킹은 막는다.
 const SECURITY = {
   "Content-Security-Policy":
     "default-src 'self'; base-uri 'self'; object-src 'none'; " +
     "frame-ancestors 'none'; form-action 'self'; " +
-    "img-src 'self' https: data:; style-src 'self' 'unsafe-inline'; " +
+    // blob: 은 대출목록 캔버스로 만든 PNG 미리보기용.
+    "img-src 'self' https: data: blob:; style-src 'self' 'unsafe-inline'; " +
     "script-src 'self' 'unsafe-inline'; connect-src 'self'",
   "X-Content-Type-Options": "nosniff",
   "Referrer-Policy": "strict-origin-when-cross-origin",
   "X-Frame-Options": "DENY",
 };
 
-function json(data, { status = 200, maxAge = 0, swr = 0 } = {}) {
-  // stale-while-revalidate: TTL이 지나도 엣지가 stale을 즉시 주고 뒤에서 갱신 → 체감 지연 제거.
-  const cc = maxAge
-    ? `public, max-age=${maxAge}${swr ? `, stale-while-revalidate=${swr}` : ""}`
+function json(data, { status = 200, fresh = 0 } = {}) {
+  // 브라우저용 Cache-Control. swr 을 넉넉히 줘서 재방문 시 네트워크를 기다리지 않게 한다.
+  const cc = fresh
+    ? `public, max-age=${fresh}, stale-while-revalidate=${fresh * 8}`
     : "no-store";
-  return new Response(JSON.stringify(data), {
+  const res = new Response(JSON.stringify(data), {
     status,
     headers: {
       "Content-Type": "application/json; charset=utf-8",
@@ -44,9 +67,40 @@ function json(data, { status = 200, maxAge = 0, swr = 0 } = {}) {
       ...SECURITY,
     },
   });
+  // 엣지 캐시가 "언제까지 신선한지" 판단할 근거. 캐시에 저장할 때만 의미가 있다.
+  if (fresh) res.headers.set("x-cbnu-fresh", String(fresh));
+  return res;
 }
 
-/** 업스트림에 GET 후 JSON 파싱. 실패 시 throw. */
+/** 캐시에 넣을 사본. 오래 보관되도록 max-age 를 늘리고 저장 시각을 박아둔다. */
+function forCache(res) {
+  const copy = new Response(res.body, res);
+  copy.headers.set("Cache-Control", `public, max-age=${HARD_TTL}`);
+  copy.headers.set("x-cbnu-at", String(Date.now()));
+  return copy;
+}
+
+/** 캐시에서 꺼낸 사본을 브라우저용 헤더로 되돌린다. */
+function fromCache(hit, state) {
+  const res = new Response(hit.body, hit);
+  const fresh = +res.headers.get("x-cbnu-fresh") || FRESH.search;
+  res.headers.delete("x-cbnu-at");
+  res.headers.set(
+    "Cache-Control",
+    `public, max-age=${fresh}, stale-while-revalidate=${fresh * 8}`
+  );
+  res.headers.set("x-cbnu-cache", state);
+  return res;
+}
+
+/** 저장된 캐시 사본이 아직 신선한가. */
+function isFresh(hit) {
+  const at = +hit.headers.get("x-cbnu-at") || 0;
+  const fresh = +hit.headers.get("x-cbnu-fresh") || FRESH.search;
+  return Date.now() - at < fresh * 1000;
+}
+
+/** 업스트림에 GET 후 JSON 파싱. 실패·타임아웃 시 throw. */
 async function upstreamGet(path) {
   const res = await fetch(UPSTREAM + path, {
     headers: {
@@ -55,6 +109,9 @@ async function upstreamGet(path) {
       "User-Agent": "Mozilla/5.0 (cbnul-lite proxy)",
     },
     cf: { cacheTtl: 180, cacheEverything: true },
+    // 도서관 서버가 가끔 수 초씩 멈춘다. 무한정 기다리지 않고 끊는다
+    // (stale 캐시가 있으면 이미 그걸 돌려준 뒤의 백그라운드 갱신이라 사용자 영향 없음).
+    signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS),
   });
   if (!res.ok) throw new Error(`upstream ${res.status}`);
   return res.json();
@@ -105,15 +162,7 @@ async function handleSearch(url) {
   const items = list.map(normalizeBiblio);
   items.sort((a, b) => typeRank(a.type) - typeRank(b.type));
 
-  return json(
-    {
-      total,
-      page,
-      size,
-      items,
-    },
-    { maxAge: 180, swr: 600 }
-  );
+  return json({ total, page, size, items }, { fresh: FRESH.search });
 }
 
 // 자료유형 정렬 순위(작을수록 먼저).
@@ -142,8 +191,54 @@ async function handleBiblio(id) {
       // content 는 책 소개가 아니라 MARC 레코드라 파싱해서 의미있는 항목만.
       marc: parseMarc(rec.content),
     },
-    { maxAge: 1800, swr: 86400 }
+    { fresh: FRESH.biblio }
   );
+}
+
+/**
+ * 표지 이미지 프록시.
+ * 목적은 두 가지 — ① 대출목록 이미지를 만들 때 캔버스가 오염(tainted)되지 않게
+ * 같은 출처로 이미지를 받아오고(다른 출처 이미지를 그리면 toBlob 이 SecurityError),
+ * ② 엣지에 오래 캐싱해 표지 로딩을 빠르게 한다.
+ * 화이트리스트 호스트만 통과시켜 공개 이미지 프록시로 악용되는 걸 막는다.
+ */
+async function handleCover(url) {
+  const raw = url.searchParams.get("u") || "";
+  let target;
+  try {
+    target = new URL(raw);
+  } catch {
+    return json({ error: "잘못된 주소" }, { status: 400 });
+  }
+  if (target.protocol !== "https:") {
+    return json({ error: "https 만 허용" }, { status: 400 });
+  }
+  const host = target.hostname.toLowerCase();
+  const allowed = COVER_HOSTS.some(
+    (h) => host === h || host.endsWith("." + h)
+  );
+  if (!allowed) return json({ error: "허용되지 않은 출처" }, { status: 403 });
+
+  const up = await fetch(target.toString(), {
+    headers: { Accept: "image/*", "User-Agent": "Mozilla/5.0 (cbnul-lite proxy)" },
+    cf: { cacheTtl: FRESH.cover, cacheEverything: true },
+    signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS),
+  });
+  const type = up.headers.get("content-type") || "";
+  if (!up.ok || !type.startsWith("image/")) {
+    return json({ error: "표지를 가져오지 못했습니다." }, { status: 404 });
+  }
+  const res = new Response(up.body, {
+    status: 200,
+    headers: {
+      "Content-Type": type,
+      "Cache-Control": `public, max-age=${FRESH.cover}, immutable`,
+      "X-Content-Type-Options": "nosniff",
+      "Referrer-Policy": "strict-origin-when-cross-origin",
+    },
+  });
+  res.headers.set("x-cbnu-fresh", String(FRESH.cover));
+  return res;
 }
 
 /**
@@ -280,6 +375,15 @@ function normalizeBiblio(r) {
   };
 }
 
+/** 경로 → 실제 처리. 캐시 갱신에서도 같은 함수를 재사용한다. */
+function route(url) {
+  if (url.pathname === "/api/search") return handleSearch(url);
+  if (url.pathname === "/api/cover") return handleCover(url);
+  const m = url.pathname.match(/^\/api\/biblio\/(.+)$/);
+  if (m) return handleBiblio(m[1]);
+  return Promise.resolve(json({ error: "not found" }, { status: 404 }));
+}
+
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
@@ -289,11 +393,23 @@ export default {
     }
 
     if (url.pathname.startsWith("/api/")) {
-      // 엣지 캐시: 최종 응답을 URL 기준으로 캐싱해 반복/인기 검색을 즉시 응답한다.
       const cache = caches.default;
       const cacheKey = new Request(url.toString(), { method: "GET" });
       const hit = await cache.match(cacheKey);
-      if (hit) return hit;
+
+      // 캐시가 있으면 신선하든 아니든 **즉시** 돌려준다. 오래됐으면 응답을 보낸 뒤
+      // 백그라운드로 갱신(stale-while-revalidate) → 사용자는 업스트림을 기다리지 않는다.
+      if (hit) {
+        if (isFresh(hit)) return fromCache(hit, "HIT");
+        ctx.waitUntil(
+          route(url)
+            .then((fresh) =>
+              fresh.ok ? cache.put(cacheKey, forCache(fresh)) : null
+            )
+            .catch(() => {}) // 갱신 실패는 조용히 무시 (다음 요청에서 재시도)
+        );
+        return fromCache(hit, "STALE");
+      }
 
       // Rate limit: 캐시 미스(=실제 업스트림 호출)에만 IP당 적용 → 일반 사용자엔 무영향,
       // 남용·도서관 서버 보호용. 바인딩 미가용 시 조용히 통과(부작용 방지).
@@ -313,17 +429,12 @@ export default {
       }
 
       try {
-        let res;
-        if (url.pathname === "/api/search") {
-          res = await handleSearch(url);
-        } else {
-          const m = url.pathname.match(/^\/api\/biblio\/(.+)$/);
-          res = m
-            ? await handleBiblio(m[1])
-            : json({ error: "not found" }, { status: 404 });
-        }
+        const res = await route(url);
         // 성공 응답만 캐시에 저장(에러/빈검색 제외). 저장은 응답 반환을 막지 않게 비동기로.
-        if (res.ok) ctx.waitUntil(cache.put(cacheKey, res.clone()));
+        if (res.ok) {
+          const store = forCache(res.clone());
+          ctx.waitUntil(cache.put(cacheKey, store));
+        }
         return res;
       } catch (err) {
         return json(
