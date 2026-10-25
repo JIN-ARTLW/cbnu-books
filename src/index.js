@@ -45,6 +45,7 @@ const FRESH = { search: 180, biblio: 1800, cover: 604800 };
 // 릴레이는 신뢰할 수 있으니 넉넉히, 직접 호출은 실패가 곧 6초 낭비라 짧게 끊는다.
 const RELAY_TIMEOUT_MS = 8000;
 const DIRECT_TIMEOUT_MS = 2500;
+const COVER_TIMEOUT_MS = 6000; // 표지 프록시(도서관이 아니라 서점 CDN 이라 별개)
 
 // 보안 헤더. CSP는 외부 표지(img https:)와 인라인 onerror/style('unsafe-inline')을
 // 허용해 앱이 깨지지 않게 하면서, 외부 스크립트·object·클릭재킹은 막는다.
@@ -384,7 +385,7 @@ async function handleCover(url) {
   const up = await fetch(target.toString(), {
     headers: { Accept: "image/*", "User-Agent": "Mozilla/5.0 (cbnul-lite proxy)" },
     cf: { cacheTtl: FRESH.cover, cacheEverything: true },
-    signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS),
+    signal: AbortSignal.timeout(COVER_TIMEOUT_MS),
   });
   const type = up.headers.get("content-type") || "";
   if (!up.ok || !type.startsWith("image/")) {

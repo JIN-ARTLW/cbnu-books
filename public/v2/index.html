@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>CBNU Books · 충북대 장서검색 (v2)</title>
+    <meta name="description" content="충북대학교 도서관 장서를 빠르고 가볍게 검색합니다." />
+    <meta name="robots" content="noindex" />
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='88'%3E📚%3C/text%3E%3C/svg%3E"
+    />
+    <link rel="preload" href="/v2/fonts/sofia-sans-latin.woff2" as="font" type="font/woff2" crossorigin />
+    <link rel="stylesheet" href="/v2/style.css" />
+  </head>
+  <body>
+    <!-- 떠 있는 알약 네비게이션 -->
+    <header class="navwrap">
+      <nav class="navpill">
+        <a class="brand" href="/v2/">
+          <span class="brand-mark">📚</span>
+          <span class="brand-text">CBNU&nbsp;Books</span>
+        </a>
+        <div class="search-wrap">
+          <form id="searchForm" class="searchbar" autocomplete="off">
+            <select id="field" aria-label="검색 범위">
+              <option value="all">전체</option>
+              <option value="title">제목</option>
+              <option value="author">저자</option>
+              <option value="publisher">출판사</option>
+            </select>
+            <input
+              id="q"
+              type="search"
+              placeholder="어떤 책을 찾으세요?"
+              aria-label="검색어"
+              autocomplete="off"
+              role="combobox"
+              aria-expanded="false"
+              aria-controls="suggest"
+              autofocus
+            />
+            <button type="submit" aria-label="검색">검색</button>
+          </form>
+          <ul id="suggest" class="suggest" role="listbox" aria-label="연관 도서" hidden></ul>
+        </div>
+        <button id="cartBtn" class="cart-btn empty" type="button" aria-label="대출 목록">
+          <span class="cart-ico">🧺</span>
+          <span class="cart-badge" id="cartBadge">0</span>
+        </button>
+      </nav>
+    </header>
+
+    <main class="wrap" id="main">
+      <div id="meta" class="meta" hidden>
+        <span id="count"></span>
+        <label class="sort">
+          정렬
+          <select id="sort">
+            <option value="score">관련도순</option>
+            <option value="PUBLISH_YEAR">출판연도순</option>
+            <option value="TITLE">제목순</option>
+            <option value="AUTHOR">저자순</option>
+          </select>
+        </label>
+      </div>
+
+      <div id="status" class="status"></div>
+
+      <!-- 시작화면 -->
+      <section id="intro" class="intro">
+        <p class="eyebrow"><span class="dot"></span>중앙도서관</p>
+        <h1 class="hero">
+          찾는 책이<br />어느 층에 있는지<br />바로 알려드려요.
+        </h1>
+        <p class="hero-sub">
+          청구기호로 층과 자료실을 자동으로 안내합니다.
+          빌릴 책을 담아두면 목록을 이미지로 저장할 수도 있어요.
+        </p>
+
+        <div class="floors">
+          <article class="floor f3">
+            <span class="floor-tag">3층</span>
+            <ul class="floor-list">
+              <li><span class="rm">3-1</span><span>언어(700) · 역사(900)</span></li>
+              <li><span class="rm">3-2</span><span>문학(800)</span></li>
+              <li><span class="rm">3-3</span><span>종교(200) · 사회과학(300)</span></li>
+              <li><span class="rm">3-4</span><span>사회과학(300)</span></li>
+              <li><span class="rm">북스토리</span><span>충BOOK 100선</span></li>
+            </ul>
+          </article>
+          <article class="floor f4">
+            <span class="floor-tag">4층</span>
+            <ul class="floor-list">
+              <li><span class="rm">4-1·2</span><span>자연과학(400) · 기술과학(500)</span></li>
+              <li><span class="rm">4-3·4</span><span>총류(000) · 철학(100) · 예술(600) · 서양서(전 주제)</span></li>
+            </ul>
+          </article>
+        </div>
+        <p class="intro-note">청구기호로 층·자료실을 추정해 안내하며, 실제 배치와 다를 수 있습니다.</p>
+      </section>
+
+      <ul id="results" class="results"></ul>
+      <nav id="pager" class="pager" hidden></nav>
+    </main>
+
+    <footer class="foot">
+      <div class="foot-inner">
+        <h2 class="foot-head">필요한 책,<br />빠르게 찾아가세요.</h2>
+        <div class="foot-grid">
+          <div class="foot-col">
+            <h3>자료</h3>
+            <a href="https://cbnul.chungbuk.ac.kr" target="_blank" rel="noopener">충북대학교 도서관 ↗</a>
+            <a href="/">기본 디자인으로 보기</a>
+          </div>
+          <div class="foot-col">
+            <h3>안내</h3>
+            <span>층·자료실은 청구기호 기반 추정값</span>
+            <span>대출 목록은 이 브라우저에만 저장</span>
+          </div>
+        </div>
+        <div class="foot-bottom">
+          <span>비공식 경량 검색 클라이언트</span>
+          <span class="pill-tag">v2 · 디자인 테스트</span>
+        </div>
+      </div>
+    </footer>
+
+    <!-- 상세 모달 -->
+    <div id="modal" class="modal" hidden>
+      <div class="modal-backdrop" data-close></div>
+      <div class="modal-panel" role="dialog" aria-modal="true" aria-labelledby="m-title">
+        <button class="modal-close" data-close aria-label="닫기">✕</button>
+        <div id="modal-body"></div>
+      </div>
+    </div>
+
+    <!-- 대출 목록 -->
+    <div id="cartModal" class="modal" hidden>
+      <div class="modal-backdrop" data-cart-close></div>
+      <div class="modal-panel" role="dialog" aria-modal="true" aria-labelledby="cart-title">
+        <button class="modal-close" data-cart-close aria-label="닫기">✕</button>
+        <h2 class="cart-title" id="cart-title">
+          빌릴 책 목록 <span id="cartCount" class="cart-n"></span>
+        </h2>
+        <p class="cart-sub">자료실별로 묶어 청구기호 순으로 정렬했습니다. 이 브라우저에만 저장돼요.</p>
+        <div id="cartBody"></div>
+        <div id="cartActions" class="cart-actions" hidden>
+          <button id="cartImage" type="button">🖼 이미지로 저장</button>
+          <button id="cartShare" type="button" hidden>공유하기</button>
+          <button id="cartClear" class="ghost" type="button">비우기</button>
+        </div>
+        <div id="cartPreview" class="cart-preview" hidden></div>
+      </div>
+    </div>
+
+    <script src="/eggs.js"></script>
+    <script src="/cart.js"></script>
+    <script src="/app.js"></script>
+  </body>
+</html>
