@@ -89,6 +89,7 @@ const server = http.createServer(async (req, res) => {
   }
   if (!rateOk()) return send(429, { error: "rate limited" });
 
+  const t0 = Date.now();
   try {
     const upstream = await fetch(UPSTREAM_ORIGIN + path, {
       headers: {
@@ -98,6 +99,8 @@ const server = http.createServer(async (req, res) => {
       signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS),
     });
     const text = await upstream.text();
+    // 검색어는 사용자의 개인적인 정보라 로그에 남기지 않는다. 상태·소요시간만.
+    console.log(`[ok] ${upstream.status} ${Date.now() - t0}ms ${text.length}B`);
     res.writeHead(upstream.status, {
       "Content-Type":
         upstream.headers.get("content-type") || "application/json; charset=utf-8",
@@ -105,7 +108,7 @@ const server = http.createServer(async (req, res) => {
     });
     res.end(text);
   } catch (err) {
-    console.error("[upstream]", err.name, err.message);
+    console.error(`[fail] ${err.name} ${Date.now() - t0}ms ${err.message}`);
     send(502, { error: "upstream failed", name: err.name });
   }
 });

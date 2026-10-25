@@ -59,30 +59,26 @@ sudo iptables -I INPUT 6 -p tcp --dport 8080 -j ACCEPT
 sudo netfilter-persistent save
 ```
 
-### 3. 릴레이 설치
+### 3. 릴레이 설치 (한 번 붙여넣기)
+
+맥에서 파일 세 개를 인스턴스로 복사한 뒤 스크립트를 돌린다.
+
 ```bash
-sudo apt update && sudo apt install -y nodejs   # Node 18+ 필요. 낮으면 nodesource 사용
-node -v                                          # v18 이상인지 확인
+# 맥에서
+scp relay.mjs cbnu-relay.service install.sh ubuntu@<공인IP>:~/
 
-sudo useradd -r -s /usr/sbin/nologin cbnu
-sudo mkdir -p /opt/cbnu-relay
-sudo cp relay.mjs /opt/cbnu-relay/
-sudo chown -R cbnu:cbnu /opt/cbnu-relay
-
-# 비밀키 생성 (이 값을 Worker 에도 똑같이 넣는다)
-SECRET=$(openssl rand -hex 32); echo "$SECRET"
-sudo tee /etc/cbnu-relay.env >/dev/null <<EOT
-RELAY_SECRET=$SECRET
-PORT=8080
-RATE_LIMIT=600
-EOT
-sudo chmod 600 /etc/cbnu-relay.env
-
-sudo cp cbnu-relay.service /etc/systemd/system/
-sudo systemctl daemon-reload
-sudo systemctl enable --now cbnu-relay
-sudo systemctl status cbnu-relay --no-pager
+# 인스턴스에서
+ssh ubuntu@<공인IP>
+sudo bash install.sh
 ```
+
+스크립트가 하는 일: Node 18+ 확인(모자라면 NodeSource 로 20 설치) → 전용 사용자 생성
+→ `/opt/cbnu-relay` 배치 → 비밀키 생성 → systemd 등록·기동 → iptables 개방 →
+자체 점검(healthz, 경로 차단) → **Worker 에 넣을 `RELAY_BASE` / `RELAY_SECRET` 출력**.
+
+> **함정:** Ubuntu 22.04 의 `apt install nodejs` 는 Node 12 를 설치한다. 전역 `fetch` 가
+> 없어 릴레이가 기동 직후 죽는다. 그래서 스크립트가 버전을 직접 확인한다.
+> 수동 설치한다면 반드시 Node 18 이상인지 `node -v` 로 확인할 것.
 
 ### 4. 동작 확인
 ```bash
