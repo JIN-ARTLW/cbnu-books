@@ -126,6 +126,17 @@ async function upstreamGet(path, env, meta) {
   const full = PYXIS_PREFIX + path;
   const tried = [];
 
+  // 1순위: Durable Object 경유. 이유는 아래 Upstream 클래스 주석 참고.
+  if (env?.UPSTREAM) {
+    try {
+      const out = await viaDO(env, UPSTREAM_ORIGIN + full);
+      if (meta) meta.route = "do";
+      return out;
+    } catch (err) {
+      tried.push(`do(${err.name}: ${err.message})`);
+    }
+  }
+
   if (env?.RELAY_BASE && env?.RELAY_SECRET) {
     try {
       const out = await viaRelay(env, full);
@@ -153,6 +164,68 @@ class UpstreamError extends Error {
   constructor(message) {
     super(message);
     this.name = "UpstreamError";
+  }
+}
+
+/**
+ * Durable Object 를 거쳐 업스트림을 부른다.
+ *
+ * 왜 이게 되는가: 충북대 방화벽은 Worker 의 일반 서브리퀘스트 경로를 드롭하지만,
+ * DO 안에서 나가는 연결은 타지 않는다. 같은 서울(ICN) colo 인데도 그렇다.
+ * 실측(2026-10-25, 질의를 매번 바꿔 캐시 배제, 교대 호출 20회×5세트):
+ *
+ *   세트 1: 직접  0/20   DO 20/20      세트 4: 직접  0/20   DO 20/20
+ *   세트 2: 직접  0/20   DO 20/20      세트 5: 직접 20/20   DO 20/20
+ *   세트 3: 직접 20/20   DO 20/20
+ *   → 직접 60/100, DO 100/100. 직접이 전멸한 구간 전부에서 DO 는 무손실.
+ *
+ * 지연 차이는 1ms 수준이라 사실상 없다.
+ *
+ * 주의 ① DO 의 위치는 **생성 시점에 고정**된다. 해외에서 온 첫 요청이 DO 를 해외에
+ *   만들어 버리면 그 DO 는 계속 해외에 남아 차단을 탄다(해외 엣지는 0~25%).
+ *   그래서 항상 locationHint "apac" 을 준다.
+ * 주의 ② DO 하나는 요청을 순차 처리하므로 풀로 나눠 동시성을 확보한다.
+ */
+const DO_POOL = 8;
+const DO_TIMEOUT_MS = 8000;
+
+function pathHash(s) {
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0;
+  return Math.abs(h);
+}
+
+async function viaDO(env, targetUrl) {
+  const id = env.UPSTREAM.idFromName(`kr-${pathHash(targetUrl) % DO_POOL}`);
+  const stub = env.UPSTREAM.get(id, { locationHint: "apac" });
+  const res = await stub.fetch("https://upstream/", {
+    headers: { "x-target": targetUrl },
+  });
+  if (!res.ok) throw new Error(`do ${res.status}`);
+  return res.json();
+}
+
+/** 업스트림 호출만 담당하는 DO. 상태를 저장하지 않는다. */
+export class Upstream {
+  async fetch(request) {
+    const target = request.headers.get("x-target");
+    if (!target) return new Response("no target", { status: 400 });
+    try {
+      const res = await fetch(target, {
+        headers: {
+          Accept: "application/json",
+          "User-Agent": "Mozilla/5.0 (cbnul-lite proxy)",
+        },
+        signal: AbortSignal.timeout(DO_TIMEOUT_MS),
+      });
+      return new Response(res.body, {
+        status: res.status,
+        headers: { "Content-Type": "application/json; charset=utf-8" },
+      });
+    } catch (err) {
+      // 상위가 릴레이·직접 호출로 넘어갈 수 있게 실패를 상태코드로 알린다.
+      return new Response(JSON.stringify({ error: err.name }), { status: 599 });
+    }
   }
 }
 

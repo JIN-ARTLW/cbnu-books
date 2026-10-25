@@ -13,3 +13,13 @@ name = "RATE_LIMITER"
 type = "ratelimit"
 namespace_id = "1001"
 simple = { limit = 120, period = 60 }
+
+# 업스트림 호출을 DO 안에서 내보내기 위한 바인딩.
+# 충북대 방화벽이 Worker 일반 서브리퀘스트는 드롭하지만 DO 경유는 통과한다(src/index.js 참고).
+[[durable_objects.bindings]]
+name = "UPSTREAM"
+class_name = "Upstream"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["Upstream"]
