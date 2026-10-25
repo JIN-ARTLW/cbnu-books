@@ -1106,3 +1106,58 @@ a {
     padding: 22px 18px;
   }
 }
+
+/* ---- 업스트림 연결 실패 안내 ---- */
+.failbox {
+  max-width: 460px;
+  margin: 28px auto;
+  padding: 26px 22px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  text-align: center;
+}
+.fail-title {
+  margin: 0 0 6px;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text);
+}
+.fail-sub {
+  margin: 0 0 4px;
+  font-size: 13px;
+  color: var(--muted);
+  line-height: 1.6;
+}
+.fail-actions {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  margin-top: 16px;
+  flex-wrap: wrap;
+}
+.fail-actions button {
+  border: 1px solid var(--accent);
+  background: var(--accent);
+  color: var(--on-accent);
+  border-radius: 999px;
+  padding: 8px 18px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.fail-actions button:hover {
+  filter: brightness(1.07);
+}
+.fail-actions .ext-link {
+  margin-top: 0;
+}
+
+/* 업스트림 장애로 묵은 캐시를 보여줄 때의 표시 */
+.stale {
+  color: var(--no);
+  font-size: 12px;
+  cursor: help;
+}

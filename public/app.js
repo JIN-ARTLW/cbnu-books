@@ -41,7 +41,16 @@ async function getJSON(url) {
   const p = (async () => {
     const res = await fetch(url);
     const data = await res.json();
-    if (!res.ok) throw new Error(data.error || "요청에 실패했습니다.");
+    if (!res.ok) {
+      // Worker 가 알려준 분류를 그대로 달아둔다 — 호출부가 재시도 여부를 판단한다.
+      const err = new Error(data.error || "요청에 실패했습니다.");
+      err.code = data.code;
+      err.retryable = !!data.retryable;
+      err.status = res.status;
+      throw err;
+    }
+    // 업스트림이 죽어 묵은 캐시가 내려온 경우를 화면에 알릴 수 있게 나이를 함께 둔다.
+    data._age = +res.headers.get("x-cbnu-age") || 0;
     netCache.set(url, { t: Date.now(), data });
     if (netCache.size > 80) netCache.delete(netCache.keys().next().value);
     return data;
@@ -131,7 +140,7 @@ function writeUrl(push) {
 }
 
 /* ---------- 검색 ---------- */
-async function search() {
+async function search(attempt = 0) {
   if (!state.q.trim()) {
     el.meta.hidden = true;
     el.results.innerHTML = "";
@@ -143,6 +152,7 @@ async function search() {
   }
   el.intro.hidden = true;
   el.status.className = "status";
+  if (attempt === 0) clearTimeout(retryTimer); // 사용자가 새로 검색하면 재시도 중단
 
   const url = searchUrl(state.q, state.field, state.sort, state.page);
 
@@ -166,13 +176,73 @@ async function search() {
   } catch (err) {
     if (seq !== searchSeq) return;
     el.meta.hidden = true;
+    el.pager.hidden = true;
     el.results.innerHTML = "";
-    el.status.textContent = "오류: " + err.message;
-    el.status.className = "status error";
+    if (err.retryable) showUpstreamError(seq, attempt);
+    else {
+      el.status.textContent = "오류: " + err.message;
+      el.status.className = "status error";
+    }
   }
 }
 
 let searchSeq = 0;
+let retryTimer = null;
+
+/*
+ * 도서관 서버 연결 실패는 대체로 일시적이라, 빈 화면에 에러만 띄우지 않고
+ * 자동으로 몇 번 더 시도한다. 새 검색이 시작되면 seq 가 어긋나 조용히 멈춘다.
+ */
+const RETRY_DELAYS = [1500, 4000, 8000];
+
+function showUpstreamError(seq, attempt) {
+  clearTimeout(retryTimer);
+  const willRetry = attempt < RETRY_DELAYS.length;
+  const wait = willRetry ? RETRY_DELAYS[attempt] : 0;
+
+  el.status.className = "status";
+  el.status.innerHTML = `
+    <div class="failbox">
+      <p class="fail-title">도서관 서버에 연결하지 못했습니다</p>
+      <p class="fail-sub">충북대 도서관 쪽 응답이 없습니다. 잠시 뒤면 대개 복구됩니다.</p>
+      <p class="fail-sub" id="retryNote">${
+        willRetry
+          ? `<span id="retrySec">${Math.ceil(wait / 1000)}</span>초 후 자동으로 다시 시도합니다…`
+          : "자동 재시도를 모두 마쳤습니다."
+      }</p>
+      <div class="fail-actions">
+        <button type="button" id="retryNow">지금 다시 시도</button>
+        <a class="ext-link" target="_blank" rel="noopener"
+           href="https://cbnul.chungbuk.ac.kr">충북대 도서관에서 검색 ↗</a>
+      </div>
+    </div>`;
+
+  const retryNow = document.getElementById("retryNow");
+  if (retryNow) {
+    retryNow.addEventListener("click", () => {
+      clearTimeout(retryTimer);
+      search(0);
+    });
+  }
+
+  if (!willRetry) return;
+
+  // 남은 시간 카운트다운
+  let left = Math.ceil(wait / 1000);
+  const tick = setInterval(() => {
+    if (seq !== searchSeq) return clearInterval(tick);
+    left -= 1;
+    const span = document.getElementById("retrySec");
+    if (span && left > 0) span.textContent = String(left);
+    if (left <= 0) clearInterval(tick);
+  }, 1000);
+
+  retryTimer = setTimeout(() => {
+    clearInterval(tick);
+    if (seq !== searchSeq) return; // 그 사이 사용자가 새로 검색함
+    search(attempt + 1);
+  }, wait);
+}
 
 // 결과를 기다리는 동안의 자리표시자. 빈 화면보다 체감이 빠르고 레이아웃도 안 튄다.
 function skeletonHtml() {
@@ -200,7 +270,8 @@ function renderResults(data) {
   }
   el.status.textContent = "";
   el.meta.hidden = false;
-  el.count.innerHTML = `전체 <strong>${data.total.toLocaleString()}</strong>건`;
+  el.count.innerHTML =
+    `전체 <strong>${data.total.toLocaleString()}</strong>건` + staleNote(data._age);
 
   el.results.innerHTML = data.items.map(cardHtml).join("");
   fitCallNos();
@@ -211,6 +282,17 @@ function renderResults(data) {
   if (state.page * PAGE_SIZE < data.total) {
     prefetch(searchUrl(state.q, state.field, state.sort, state.page + 1));
   }
+}
+
+/*
+ * 도서관 서버가 오래 죽어 있으면 꽤 묵은 캐시가 내려올 수 있다. 그때 대출상태가
+ * 실제와 다를 수 있으니 한 시간을 넘긴 자료는 언제 기준인지 밝힌다.
+ */
+function staleNote(ageSec) {
+  if (!ageSec || ageSec < 3600) return "";
+  const h = Math.floor(ageSec / 3600);
+  const label = h < 24 ? `${h}시간 전` : `${Math.floor(h / 24)}일 전`;
+  return ` <span class="stale" title="도서관 서버에 연결되지 않아 저장해 둔 결과를 보여줍니다">· ${label} 정보</span>`;
 }
 
 // 청구기호가 타입칩 옆 남은 폭을 넘치면 줄바꿈 대신 글자 크기를 줄여 한 줄에 맞춘다.

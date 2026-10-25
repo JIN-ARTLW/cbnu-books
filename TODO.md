@@ -3,6 +3,10 @@
 CBNU Books 남은 작업 / 검토 항목. (상세 배경은 [DEVLOG.md](DEVLOG.md) 참고)
 
 ## 해야 할 것
+- [ ] **릴레이 VPS 올리기** — 검색 100% 신뢰도의 전제. `relay/README.md` 대로
+      Oracle Cloud 무료 서울 인스턴스에 올리고 `wrangler secret put RELAY_BASE`
+      / `RELAY_SECRET` 설정. 올리기 전까지는 직접 호출만 쓰므로 성공률 ~57%.
+      확인: 응답 헤더 `x-cbnu-route` 가 `relay` 면 정상, `direct` 면 릴레이 미연결.
 - [ ] **300번대(사회과학) 층 세분화** — 현장 안내판상 300이 3-3·3-4 두 방에 분산됨.
       방별 세부 분류(예: 320은 3-3, 330은 3-4)를 현장 확인 후, `src/index.js`의
       `KDC_FLOOR`/`shelfLocation()`을 분류번호 둘째 자리까지 세분화. 현재는 "3-3·4"로 묶어 표시.

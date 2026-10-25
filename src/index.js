@@ -13,7 +13,8 @@
  *   collection 2 = 전체 장서
  */
 
-const UPSTREAM = "https://cbnul.chungbuk.ac.kr/pyxis-api/1";
+const UPSTREAM_ORIGIN = "https://cbnul.chungbuk.ac.kr";
+const PYXIS_PREFIX = "/pyxis-api/1";
 const COLLECTION = "2"; // 전체 장서
 const ALLOWED_FIELDS = new Set(["all", "title", "author", "publisher"]);
 const ALLOWED_SORTS = new Set(["score", "PUBLISH_YEAR", "TITLE", "AUTHOR"]);
@@ -36,9 +37,14 @@ const COVER_HOSTS = [
  * 캐시 API 자체에는 HARD_TTL 만큼 보관시켜(=Cache-Control max-age) 만료로 지워지지 않게 한다.
  * (Workers Cache API 는 stale-while-revalidate 를 스스로 해주지 않으므로 직접 구현.)
  */
-const HARD_TTL = 86400; // 캐시 보관 기간(초)
+// 캐시 보관 기간. 길게 잡아두면 업스트림이 통째로 죽어도 한 번이라도 조회된 검색어는
+// 계속 응답할 수 있다(신선도는 FRESH 로 따로 관리하므로 평소 동작에는 영향 없음).
+const HARD_TTL = 2592000; // 30일
 const FRESH = { search: 180, biblio: 1800, cover: 604800 };
-const UPSTREAM_TIMEOUT_MS = 6000;
+
+// 릴레이는 신뢰할 수 있으니 넉넉히, 직접 호출은 실패가 곧 6초 낭비라 짧게 끊는다.
+const RELAY_TIMEOUT_MS = 8000;
+const DIRECT_TIMEOUT_MS = 2500;
 
 // 보안 헤더. CSP는 외부 표지(img https:)와 인라인 onerror/style('unsafe-inline')을
 // 허용해 앱이 깨지지 않게 하면서, 외부 스크립트·object·클릭재킹은 막는다.
@@ -54,7 +60,7 @@ const SECURITY = {
   "X-Frame-Options": "DENY",
 };
 
-function json(data, { status = 200, fresh = 0 } = {}) {
+function json(data, { status = 200, fresh = 0, route = null } = {}) {
   // 브라우저용 Cache-Control. swr 을 넉넉히 줘서 재방문 시 네트워크를 기다리지 않게 한다.
   const cc = fresh
     ? `public, max-age=${fresh}, stale-while-revalidate=${fresh * 8}`
@@ -69,6 +75,8 @@ function json(data, { status = 200, fresh = 0 } = {}) {
   });
   // 엣지 캐시가 "언제까지 신선한지" 판단할 근거. 캐시에 저장할 때만 의미가 있다.
   if (fresh) res.headers.set("x-cbnu-fresh", String(fresh));
+  // 어느 경로로 받아왔는지. 릴레이가 조용히 죽어 direct 로만 돌고 있는지 바로 보인다.
+  if (route) res.headers.set("x-cbnu-route", route);
   return res;
 }
 
@@ -84,6 +92,10 @@ function forCache(res) {
 function fromCache(hit, state) {
   const res = new Response(hit.body, hit);
   const fresh = +res.headers.get("x-cbnu-fresh") || FRESH.search;
+  const at = +res.headers.get("x-cbnu-at") || 0;
+  // 업스트림이 오래 죽어 있으면 꽤 묵은 캐시가 나갈 수 있다. 몇 초짜리 자료인지
+  // 알려주면 프론트가 "N일 전 정보" 같은 안내를 띄울 수 있다.
+  if (at) res.headers.set("x-cbnu-age", String(Math.floor((Date.now() - at) / 1000)));
   res.headers.delete("x-cbnu-at");
   res.headers.set(
     "Cache-Control",
@@ -100,24 +112,98 @@ function isFresh(hit) {
   return Date.now() - at < fresh * 1000;
 }
 
-/** 업스트림에 GET 후 JSON 파싱. 실패·타임아웃 시 throw. */
-async function upstreamGet(path) {
-  const res = await fetch(UPSTREAM + path, {
+/**
+ * 업스트림 호출 — **한국 릴레이 우선, Cloudflare 직접 호출은 예비용.**
+ *
+ * 충북대 방화벽이 Cloudflare 엣지에서 오는 연결을 조용히 드롭한다.
+ * 실측(2026-10-25, 25초 간격 14회): 엣지 8/14(57%)·실패는 전부 6초 타임아웃,
+ * 한국 일반 IP 14/14(100%). 그래서 한국에 둔 릴레이(relay/relay.mjs)로 나가고,
+ * 릴레이가 죽었을 때만 직접 호출로 떨어진다(0%보다는 57%가 나으므로).
+ *
+ * 실패·타임아웃 시 UpstreamError 를 throw.
+ */
+async function upstreamGet(path, env, meta) {
+  const full = PYXIS_PREFIX + path;
+  const tried = [];
+
+  if (env?.RELAY_BASE && env?.RELAY_SECRET) {
+    try {
+      const out = await viaRelay(env, full);
+      if (meta) meta.route = "relay";
+      return out;
+    } catch (err) {
+      tried.push(`relay(${err.name}: ${err.message})`);
+    }
+  } else {
+    tried.push("relay(미설정)");
+  }
+
+  try {
+    const out = await viaDirect(full);
+    if (meta) meta.route = "direct";
+    return out;
+  } catch (err) {
+    tried.push(`direct(${err.name}: ${err.message})`);
+  }
+
+  throw new UpstreamError(tried.join(" | "));
+}
+
+class UpstreamError extends Error {
+  constructor(message) {
+    super(message);
+    this.name = "UpstreamError";
+  }
+}
+
+/** 한국 릴레이 경유. 요청마다 HMAC 서명(타임스탬프 포함)을 붙인다. */
+async function viaRelay(env, path) {
+  const ts = String(Date.now());
+  const sig = await hmacHex(env.RELAY_SECRET, `${ts}\n${path}`);
+  const res = await fetch(env.RELAY_BASE.replace(/\/+$/, "") + path, {
+    headers: {
+      Accept: "application/json",
+      "x-cbnu-ts": ts,
+      "x-cbnu-sig": sig,
+    },
+    signal: AbortSignal.timeout(RELAY_TIMEOUT_MS),
+  });
+  if (!res.ok) throw new Error(`relay ${res.status}`);
+  return res.json();
+}
+
+/** Cloudflare 엣지에서 도서관으로 직접. 자주 막히므로 짧게 끊는다. */
+async function viaDirect(path) {
+  const res = await fetch(UPSTREAM_ORIGIN + path, {
     headers: {
       Accept: "application/json",
       // 도서관 서버가 가끔 빈 UA 를 막으므로 평범한 값을 보낸다.
       "User-Agent": "Mozilla/5.0 (cbnul-lite proxy)",
     },
     cf: { cacheTtl: 180, cacheEverything: true },
-    // 도서관 서버가 가끔 수 초씩 멈춘다. 무한정 기다리지 않고 끊는다
-    // (stale 캐시가 있으면 이미 그걸 돌려준 뒤의 백그라운드 갱신이라 사용자 영향 없음).
-    signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS),
+    signal: AbortSignal.timeout(DIRECT_TIMEOUT_MS),
   });
   if (!res.ok) throw new Error(`upstream ${res.status}`);
   return res.json();
 }
 
-async function handleSearch(url) {
+async function hmacHex(secret, msg) {
+  const enc = new TextEncoder();
+  const key = await crypto.subtle.importKey(
+    "raw",
+    enc.encode(secret),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"]
+  );
+  const sig = await crypto.subtle.sign("HMAC", key, enc.encode(msg));
+  return [...new Uint8Array(sig)]
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+}
+
+async function handleSearch(url, env) {
+  const meta = {};
   const q = (url.searchParams.get("q") || "").trim();
   if (!q) return json({ error: "검색어가 비어 있습니다." }, { status: 400 });
 
@@ -148,7 +234,9 @@ async function handleSearch(url) {
   }
 
   const raw = await upstreamGet(
-    `/collections/${COLLECTION}/search?${params.toString()}`
+    `/collections/${COLLECTION}/search?${params.toString()}`,
+    env,
+    meta
   );
   const data = raw?.data;
   const list = data && typeof data === "object" ? data.list || [] : [];
@@ -162,7 +250,7 @@ async function handleSearch(url) {
   const items = list.map(normalizeBiblio);
   items.sort((a, b) => typeRank(a.type) - typeRank(b.type));
 
-  return json({ total, page, size, items }, { fresh: FRESH.search });
+  return json({ total, page, size, items }, { fresh: FRESH.search, route: meta.route });
 }
 
 // 자료유형 정렬 순위(작을수록 먼저).
@@ -173,9 +261,10 @@ function typeRank(type) {
   return 2; // 정기간행물·학위논문·비도서 등
 }
 
-async function handleBiblio(id) {
+async function handleBiblio(id, env) {
+  const meta = {};
   if (!/^\d+$/.test(id)) return json({ error: "잘못된 id" }, { status: 400 });
-  const raw = await upstreamGet(`/biblios/${id}?isForPyxis3=true`);
+  const raw = await upstreamGet(`/biblios/${id}?isForPyxis3=true`, env, meta);
   const rec = raw?.data?.list?.[0];
   if (!rec) return json({ error: "자료를 찾을 수 없습니다." }, { status: 404 });
 
@@ -191,7 +280,7 @@ async function handleBiblio(id) {
       // content 는 책 소개가 아니라 MARC 레코드라 파싱해서 의미있는 항목만.
       marc: parseMarc(rec.content),
     },
-    { fresh: FRESH.biblio }
+    { fresh: FRESH.biblio, route: meta.route }
   );
 }
 
@@ -376,11 +465,11 @@ function normalizeBiblio(r) {
 }
 
 /** 경로 → 실제 처리. 캐시 갱신에서도 같은 함수를 재사용한다. */
-function route(url) {
-  if (url.pathname === "/api/search") return handleSearch(url);
+function route(url, env) {
+  if (url.pathname === "/api/search") return handleSearch(url, env);
   if (url.pathname === "/api/cover") return handleCover(url);
   const m = url.pathname.match(/^\/api\/biblio\/(.+)$/);
-  if (m) return handleBiblio(m[1]);
+  if (m) return handleBiblio(m[1], env);
   return Promise.resolve(json({ error: "not found" }, { status: 404 }));
 }
 
@@ -402,7 +491,7 @@ export default {
       if (hit) {
         if (isFresh(hit)) return fromCache(hit, "HIT");
         ctx.waitUntil(
-          route(url)
+          route(url, env)
             .then((fresh) =>
               fresh.ok ? cache.put(cacheKey, forCache(fresh)) : null
             )
@@ -429,7 +518,7 @@ export default {
       }
 
       try {
-        const res = await route(url);
+        const res = await route(url, env);
         // 성공 응답만 캐시에 저장(에러/빈검색 제외). 저장은 응답 반환을 막지 않게 비동기로.
         if (res.ok) {
           const store = forCache(res.clone());
@@ -437,9 +526,16 @@ export default {
         }
         return res;
       } catch (err) {
+        // 내부 사정(릴레이 주소·시도 내역)은 응답에 담지 않고 로그로만 남긴다.
+        // `wrangler tail` 로 확인 가능.
+        console.error("[upstream]", url.pathname, String(err));
         return json(
-          { error: "도서관 서버 응답 오류", detail: String(err) },
-          { status: 502 }
+          {
+            error: "도서관 서버에 연결하지 못했습니다. 잠시 후 다시 시도해 주세요.",
+            code: "UPSTREAM_UNREACHABLE",
+            retryable: true,
+          },
+          { status: 503 }
         );
       }
     }

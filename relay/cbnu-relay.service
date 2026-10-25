@@ -1,0 +1,25 @@
+[Unit]
+Description=cbnu-books relay (한국 경유지)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=cbnu
+WorkingDirectory=/opt/cbnu-relay
+ExecStart=/usr/bin/node /opt/cbnu-relay/relay.mjs
+EnvironmentFile=/etc/cbnu-relay.env
+Restart=always
+RestartSec=3
+
+# 최소 권한
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=
+CapabilityBoundingSet=
+MemoryMax=256M
+
+[Install]
+WantedBy=multi-user.target
