@@ -178,7 +178,10 @@ async function search(attempt = 0) {
     el.meta.hidden = true;
     el.pager.hidden = true;
     el.results.innerHTML = "";
-    if (err.retryable) showUpstreamError(seq, attempt);
+    if (err.retryable) {
+      lastFailAt = Date.now();
+      showUpstreamError(seq, attempt);
+    }
     else {
       el.status.textContent = "오류: " + err.message;
       el.status.className = "status error";
@@ -188,12 +191,28 @@ async function search(attempt = 0) {
 
 let searchSeq = 0;
 let retryTimer = null;
+let lastFailAt = 0; // 마지막 업스트림 실패 시각 (차단 창 판단용)
+
+function inBlockWindow() {
+  return Date.now() - lastFailAt < BLOCK_WINDOW_MS;
+}
 
 /*
  * 도서관 서버 연결 실패는 대체로 일시적이라, 빈 화면에 에러만 띄우지 않고
  * 자동으로 몇 번 더 시도한다. 새 검색이 시작되면 seq 가 어긋나 조용히 멈춘다.
  */
-const RETRY_DELAYS = [1500, 4000, 8000];
+/*
+ * 간격은 실측으로 정했다(2026-10-25). 실패 직후 2초·5초 재시도는 **반드시** 또 실패하고
+ * 10초를 넘겨야 회복된다 — 도서관 방화벽의 차단 창이 5~10초이고, 그동안 Cloudflare 도
+ * 연결 실패를 캐싱해 같은 530 을 2ms 만에 돌려주기 때문. 빨리 여러 번 때리는 것보다
+ * 한 번을 늦게 때리는 쪽이 압도적으로 낫다.
+ *
+ *   지연:      2s   5s   10s  20s  30s  45s
+ *   라운드 1:  503  503  200  200  200  200
+ *   라운드 2:  503  503  200  200  200  200
+ */
+const RETRY_DELAYS = [10000, 20000, 30000];
+const BLOCK_WINDOW_MS = 10000; // 이 시간 안엔 재요청해도 어차피 실패한다
 
 function showUpstreamError(seq, attempt) {
   clearTimeout(retryTimer);
@@ -204,7 +223,8 @@ function showUpstreamError(seq, attempt) {
   el.status.innerHTML = `
     <div class="failbox">
       <p class="fail-title">도서관 서버에 연결하지 못했습니다</p>
-      <p class="fail-sub">충북대 도서관 쪽 응답이 없습니다. 잠시 뒤면 대개 복구됩니다.</p>
+      <p class="fail-sub">충북대 도서관 서버가 잠시 연결을 받지 않고 있습니다.<br />
+        보통 10초쯤 뒤면 풀립니다.</p>
       <p class="fail-sub" id="retryNote">${
         willRetry
           ? `<span id="retrySec">${Math.ceil(wait / 1000)}</span>초 후 자동으로 다시 시도합니다…`
@@ -604,6 +624,8 @@ async function fetchSuggest(q) {
     renderSuggest();
     return;
   }
+  // 차단 창 안에서는 어차피 실패한다. 괜히 도서관 서버를 더 때려 차단을 연장하지 않는다.
+  if (inBlockWindow()) return;
 
   try {
     // 일부러 abort 하지 않는다 — 이 응답이 곧 실행될 검색과 같은 URL 이라,
