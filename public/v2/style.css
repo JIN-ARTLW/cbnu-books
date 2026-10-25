@@ -80,7 +80,11 @@ a { color: var(--ink); }
   top: 0;
   z-index: 40;
   padding: 24px 24px 8px;
+  transition: padding 0.3s cubic-bezier(0.22, 1, 0.36, 1);
 }
+/* 스크롤하면 알약이 위로 붙으며 살짝 조인다 */
+.navwrap.stuck { padding-top: 10px; }
+.navwrap.stuck .navpill { box-shadow: rgba(0, 0, 0, 0.07) 0 6px 28px 0; }
 .navpill {
   max-width: 1120px;
   margin: 0 auto;
@@ -91,6 +95,7 @@ a { color: var(--ink); }
   background: var(--white);
   border-radius: var(--r-pill);
   box-shadow: var(--sh-1);
+  transition: box-shadow 0.3s ease;
 }
 .brand {
   display: flex;
@@ -275,21 +280,196 @@ a { color: var(--ink); }
 }
 .eyebrow .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--arc); }
 
-/* ---- 시작화면 ---- */
-.intro { padding: 64px 0 32px; }
+/* ---- 스크롤 등장 ---- */
+.reveal {
+  opacity: 0;
+  transform: translateY(24px);
+  transition: opacity 0.7s cubic-bezier(0.22, 1, 0.36, 1),
+    transform 0.7s cubic-bezier(0.22, 1, 0.36, 1);
+  transition-delay: calc(var(--i, 0) * 70ms);
+}
+.reveal.in { opacity: 1; transform: none; }
+@media (prefers-reduced-motion: reduce) {
+  .reveal { opacity: 1; transform: none; transition: none; }
+}
+
+/* ---- 히어로 (Apple 식 대형 중앙 타이포) ---- */
+.intro { padding-bottom: 32px; }
+.hero-sec { padding: 112px 48px 128px; text-align: center; }
+.eyebrow.center { justify-content: center; }
 .hero {
-  margin: 0 0 24px;
-  font-size: 64px; font-weight: 500; line-height: 1; letter-spacing: -0.02em;
+  margin: 0 auto 32px;
+  max-width: 14ch;
+  font-size: clamp(44px, 7.4vw, 92px);
+  font-weight: 500;
+  line-height: 0.98;
+  letter-spacing: -0.03em;
+}
+.hero em {
+  font-style: normal;
+  /* 강조는 색이 아니라 획으로 — 주황은 장식용이라 글자에 쓰지 않는다 */
+  position: relative;
+  white-space: nowrap;
+}
+.hero em::after {
+  content: "";
+  position: absolute;
+  left: 0; right: 0; bottom: 0.06em;
+  height: 0.09em;
+  background: var(--arc);
+  border-radius: var(--r-pill);
 }
 .hero-sub {
-  max-width: 520px; margin: 0 0 64px;
-  font-size: 18px; font-weight: 450; line-height: 1.5; color: var(--muted);
+  max-width: 50ch;
+  margin: 0 auto 48px;
+  font-size: clamp(16px, 1.5vw, 20px);
+  font-weight: 450;
+  line-height: 1.55;
+  color: var(--muted);
 }
+.hero-cta {
+  border: 1.5px solid var(--ink);
+  background: var(--ink);
+  color: var(--canvas);
+  font-family: var(--font);
+  font-size: 17px; font-weight: 500; letter-spacing: -0.02em;
+  border-radius: var(--r-btn);
+  padding: 14px 40px;
+  cursor: pointer;
+  transition: transform 0.14s ease;
+}
+.hero-cta:hover { transform: translateY(-2px); }
+.hero-cta:active { transform: translateY(0); }
+
+/* ---- 섹션 공통 ---- */
+.sec-head {
+  margin: 0 0 80px;
+  font-size: clamp(32px, 4.4vw, 56px);
+  font-weight: 500;
+  line-height: 1.06;
+  letter-spacing: -0.025em;
+}
+
+/* ---- 주제별 둘러보기: 원형 포트레이트 + 위성 + 궤도 ---- */
+.orbit-sec { position: relative; padding: 128px 0; overflow: hidden; }
+.orbit-sec > .wrap { position: relative; z-index: 1; }
+
+/* 고스트 워터마크 — 크림 위 크림 */
+.ghost {
+  position: absolute;
+  top: 56px; right: -4vw;
+  font-size: clamp(120px, 20vw, 280px);
+  font-weight: 500;
+  letter-spacing: -0.04em;
+  line-height: 1;
+  color: var(--ghost);
+  pointer-events: none;
+  user-select: none;
+}
+
+/* 궤도 호 — 얇은 주황 곡선. 비대칭 배치에서만 의미가 있어 모바일에선 숨긴다 */
+.orbits {
+  position: absolute;
+  inset: 180px 0 0;
+  width: 100%; height: 620px;
+  pointer-events: none;
+}
+.orbits path {
+  fill: none;
+  stroke: var(--arc);
+  stroke-width: 1.2;
+  opacity: 0.5;
+  stroke-dasharray: 1400;
+  stroke-dashoffset: 1400;
+  animation: draw 2.4s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+.orbits path:nth-child(2) { animation-delay: 0.3s; }
+.orbits path:nth-child(3) { animation-delay: 0.6s; }
+@keyframes draw { to { stroke-dashoffset: 0; } }
+@media (prefers-reduced-motion: reduce) {
+  .orbits path { animation: none; stroke-dashoffset: 0; }
+}
+
+.topics {
+  position: relative;
+  list-style: none; margin: 0; padding: 0;
+  display: grid; grid-template-columns: repeat(3, 1fr);
+  gap: 96px 40px;
+}
+/* 격자에 줄 세우지 않는다 — 비대칭 배치가 이 디자인의 핵심 */
+.topic:nth-child(2) { margin-top: 72px; }
+.topic:nth-child(3) { margin-top: 16px; }
+.topic:nth-child(4) { margin-top: -32px; }
+.topic:nth-child(5) { margin-top: 48px; }
+.topic:nth-child(6) { margin-top: -8px; }
+
+.topic { text-align: left; }
+.topic > button {
+  position: relative;
+  display: block;
+  width: 100%; max-width: 260px;
+  aspect-ratio: 1;
+  margin: 0 0 24px;
+  padding: 0; border: 0; background: none; cursor: pointer;
+}
+.orb {
+  display: flex; align-items: center; justify-content: center;
+  width: 100%; height: 100%;
+  border-radius: 50%;
+  background: radial-gradient(
+    circle at 32% 28%,
+    #ffe9d8 0%, #f6cdae 42%, #e7ad86 100%
+  );
+  font-size: clamp(56px, 7vw, 92px);
+  font-weight: 500;
+  color: rgba(20, 20, 19, 0.26);
+  transition: transform 0.4s cubic-bezier(0.22, 1, 0.36, 1),
+    box-shadow 0.4s ease;
+}
+.orb::before { content: attr(data-glyph); }
+.topic:nth-child(2) .orb { background: radial-gradient(circle at 32% 28%, #e4ecf7 0%, #c3d6ee 42%, #9db9dc 100%); }
+.topic:nth-child(3) .orb { background: radial-gradient(circle at 32% 28%, #efe6f5 0%, #d8c6e6 42%, #bca3d2 100%); }
+.topic:nth-child(4) .orb { background: radial-gradient(circle at 32% 28%, #e6f0e8 0%, #c6ddcb 42%, #a2c3aa 100%); }
+.topic:nth-child(5) .orb { background: radial-gradient(circle at 32% 28%, #fdeedd 0%, #f3d4a8 42%, #e0b878 100%); }
+.topic:nth-child(6) .orb { background: radial-gradient(circle at 32% 28%, #f8e5e6 0%, #ecc3c6 42%, #d79fa4 100%); }
+
+.topic > button:hover .orb { transform: scale(1.03); box-shadow: var(--sh-2); }
+
+/* 위성 CTA — 원 둘레에 걸쳐 바깥으로 삐져나온다 */
+.sat {
+  position: absolute;
+  right: 4%; bottom: 4%;
+  transform: translate(26%, 26%);
+  width: 56px; height: 56px;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--white);
+  color: var(--ink);
+  border-radius: 50%;
+  font-size: 20px;
+  box-shadow: var(--sh-1);
+  transition: transform 0.3s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.topic > button:hover .sat { transform: translate(26%, 26%) scale(1.1); }
+
+.t-eyebrow {
+  display: flex; align-items: center; gap: 8px;
+  margin: 0 0 8px;
+  font-size: 13px; font-weight: 700;
+  letter-spacing: 0.04em; color: var(--muted);
+}
+.t-eyebrow .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--arc); }
+.topic h3 {
+  margin: 0;
+  font-size: 24px; font-weight: 500; letter-spacing: -0.02em;
+}
+
+/* ---- 층별 안내 ---- */
+.floors-sec { padding: 32px 48px 128px; }
 .floors { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
 .floor {
   background: var(--lifted);
   border-radius: var(--r-lg);
-  padding: 40px;
+  padding: 48px;
 }
 .floor.f3 { --fc: #a16207; }
 .floor.f4 { --fc: #2f7fd1; }
@@ -298,7 +478,7 @@ a { color: var(--ink); }
   font-size: 14px; font-weight: 700; letter-spacing: 0.04em;
   color: var(--white); background: var(--fc);
   border-radius: var(--r-pill);
-  padding: 4px 18px; margin-bottom: 24px;
+  padding: 4px 18px; margin-bottom: 28px;
 }
 .floor-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 16px; }
 .floor-list li { display: flex; gap: 14px; align-items: baseline; font-size: 15px; }
@@ -329,7 +509,7 @@ a { color: var(--ink); }
 .status.error { color: var(--no); }
 
 /* ---- 결과 카드 ---- */
-.results { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 16px; }
+.results { list-style: none; margin: 0 0 32px; padding: 0; display: flex; flex-direction: column; gap: 16px; }
 .card {
   position: relative;
   display: flex; gap: 24px; align-items: flex-start;
@@ -560,7 +740,12 @@ a { color: var(--ink); }
 
 /* ---- 반응형 ---- */
 @media (max-width: 1023px) {
-  .hero { font-size: 48px; }
+  .hero-sec { padding: 80px 32px 96px; }
+  .orbit-sec { padding: 96px 0; }
+  .topics { gap: 64px 28px; }
+  .topic:nth-child(2) { margin-top: 48px; }
+  .topic:nth-child(4) { margin-top: -16px; }
+  .floors-sec { padding: 24px 32px 96px; }
 }
 @media (max-width: 767px) {
   .wrap { padding: 0 20px; }
@@ -571,11 +756,24 @@ a { color: var(--ink); }
   .searchbar button { padding: 8px 16px; font-size: 15px; }
   .searchbar select { font-size: 13px; }
   .cart-btn { width: 42px; height: 42px; }
-  .intro { padding: 32px 0 16px; }
-  .hero { font-size: 36px; }
-  .hero-sub { font-size: 16px; margin-bottom: 40px; }
+  .intro { padding-bottom: 8px; }
+  .hero-sec { padding: 56px 20px 72px; }
+  .hero-sub { margin-bottom: 36px; }
+  .hero-cta { padding: 13px 32px; font-size: 16px; }
+  .sec-head { margin-bottom: 48px; }
+  .orbit-sec { padding: 72px 0; }
+  /* 작은 아이브로우 글씨는 워터마크를 버티지 못한다. 모바일에선 위로 비켜 세운다. */
+  .ghost { top: -8px; right: -6vw; font-size: 76px; }
+  /* 궤도 호는 비대칭 배치에서만 의미가 있어 모바일에선 제거한다(명세) */
+  .orbits { display: none; }
+  .topics { grid-template-columns: repeat(2, 1fr); gap: 48px 20px; }
+  .topic:nth-child(n) { margin-top: 0; }
+  .topic > button { max-width: none; margin-bottom: 16px; }
+  .sat { width: 42px; height: 42px; font-size: 16px; }
+  .topic h3 { font-size: 19px; }
+  .floors-sec { padding: 16px 20px 72px; }
   .floors { grid-template-columns: 1fr; gap: 16px; }
-  .floor { padding: 28px 24px; }
+  .floor { padding: 32px 24px; }
   .meta { margin: 32px 0 16px; }
   .card { padding: 20px; gap: 16px; border-radius: 28px; }
   .cover { flex-basis: 58px; width: 58px; height: 82px; }

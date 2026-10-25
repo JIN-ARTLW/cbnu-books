@@ -14,8 +14,7 @@
     <link rel="stylesheet" href="/v2/style.css" />
   </head>
   <body>
-    <!-- 떠 있는 알약 네비게이션 -->
-    <header class="navwrap">
+    <header class="navwrap" id="navwrap">
       <nav class="navpill">
         <a class="brand" href="/v2/">
           <span class="brand-mark">📚</span>
@@ -38,7 +37,6 @@
               role="combobox"
               aria-expanded="false"
               aria-controls="suggest"
-              autofocus
             />
             <button type="submit" aria-label="검색">검색</button>
           </form>
@@ -51,57 +49,137 @@
       </nav>
     </header>
 
-    <main class="wrap" id="main">
-      <div id="meta" class="meta" hidden>
-        <span id="count"></span>
-        <label class="sort">
-          정렬
-          <select id="sort">
-            <option value="score">관련도순</option>
-            <option value="PUBLISH_YEAR">출판연도순</option>
-            <option value="TITLE">제목순</option>
-            <option value="AUTHOR">저자순</option>
-          </select>
-        </label>
+    <main id="main">
+      <div class="wrap">
+        <div id="meta" class="meta" hidden>
+          <span id="count"></span>
+          <label class="sort">
+            정렬
+            <select id="sort">
+              <option value="score">관련도순</option>
+              <option value="PUBLISH_YEAR">출판연도순</option>
+              <option value="TITLE">제목순</option>
+              <option value="AUTHOR">저자순</option>
+            </select>
+          </label>
+        </div>
+        <div id="status" class="status"></div>
       </div>
 
-      <div id="status" class="status"></div>
-
-      <!-- 시작화면 -->
+      <!-- ===== 시작화면 ===== -->
       <section id="intro" class="intro">
-        <p class="eyebrow"><span class="dot"></span>중앙도서관</p>
-        <h1 class="hero">
-          찾는 책이<br />어느 층에 있는지<br />바로 알려드려요.
-        </h1>
-        <p class="hero-sub">
-          청구기호로 층과 자료실을 자동으로 안내합니다.
-          빌릴 책을 담아두면 목록을 이미지로 저장할 수도 있어요.
-        </p>
-
-        <div class="floors">
-          <article class="floor f3">
-            <span class="floor-tag">3층</span>
-            <ul class="floor-list">
-              <li><span class="rm">3-1</span><span>언어(700) · 역사(900)</span></li>
-              <li><span class="rm">3-2</span><span>문학(800)</span></li>
-              <li><span class="rm">3-3</span><span>종교(200) · 사회과학(300)</span></li>
-              <li><span class="rm">3-4</span><span>사회과학(300)</span></li>
-              <li><span class="rm">북스토리</span><span>충BOOK 100선</span></li>
-            </ul>
-          </article>
-          <article class="floor f4">
-            <span class="floor-tag">4층</span>
-            <ul class="floor-list">
-              <li><span class="rm">4-1·2</span><span>자연과학(400) · 기술과학(500)</span></li>
-              <li><span class="rm">4-3·4</span><span>총류(000) · 철학(100) · 예술(600) · 서양서(전 주제)</span></li>
-            </ul>
-          </article>
+        <!-- 히어로 -->
+        <div class="hero-sec wrap">
+          <p class="eyebrow center reveal"><span class="dot"></span>충북대학교 중앙도서관</p>
+          <h1 class="hero reveal">
+            책이 어디 있는지<br />
+            <em>알고</em> 가세요.
+          </h1>
+          <p class="hero-sub reveal">
+            청구기호로 층과 자료실을 자동으로 알려드립니다.
+            빌릴 책을 담아 목록 이미지로 저장하면, 서가 앞에서 헤맬 일이 없습니다.
+          </p>
+          <button class="hero-cta reveal" id="heroCta" type="button">검색 시작하기</button>
         </div>
-        <p class="intro-note">청구기호로 층·자료실을 추정해 안내하며, 실제 배치와 다를 수 있습니다.</p>
+
+        <!-- 주제별 둘러보기: 원형 포트레이트 + 위성 CTA + 궤도 호 -->
+        <section class="orbit-sec">
+          <span class="ghost" aria-hidden="true">BROWSE</span>
+          <div class="wrap">
+            <p class="eyebrow reveal"><span class="dot"></span>주제별 둘러보기</p>
+            <h2 class="sec-head reveal">무엇부터<br />찾아볼까요?</h2>
+
+            <svg class="orbits" viewBox="0 0 1000 620" preserveAspectRatio="none" aria-hidden="true">
+              <path d="M 150 150 C 320 60, 520 120, 700 170" />
+              <path d="M 760 230 C 820 360, 620 420, 480 400" />
+              <path d="M 380 440 C 240 470, 180 520, 160 560" />
+            </svg>
+
+            <ul class="topics">
+              <li class="topic reveal" style="--i:0">
+                <button type="button" data-q="문학" aria-label="문학 검색">
+                  <span class="orb" data-glyph="文"></span>
+                  <span class="sat" aria-hidden="true">→</span>
+                </button>
+                <p class="t-eyebrow"><span class="dot"></span>800</p>
+                <h3>문학</h3>
+              </li>
+              <li class="topic reveal" style="--i:1">
+                <button type="button" data-q="역사" aria-label="역사 검색">
+                  <span class="orb" data-glyph="史"></span>
+                  <span class="sat" aria-hidden="true">→</span>
+                </button>
+                <p class="t-eyebrow"><span class="dot"></span>900</p>
+                <h3>역사</h3>
+              </li>
+              <li class="topic reveal" style="--i:2">
+                <button type="button" data-q="철학" aria-label="철학 검색">
+                  <span class="orb" data-glyph="哲"></span>
+                  <span class="sat" aria-hidden="true">→</span>
+                </button>
+                <p class="t-eyebrow"><span class="dot"></span>100</p>
+                <h3>철학</h3>
+              </li>
+              <li class="topic reveal" style="--i:3">
+                <button type="button" data-q="경제학" aria-label="경제학 검색">
+                  <span class="orb" data-glyph="經"></span>
+                  <span class="sat" aria-hidden="true">→</span>
+                </button>
+                <p class="t-eyebrow"><span class="dot"></span>300</p>
+                <h3>경제학</h3>
+              </li>
+              <li class="topic reveal" style="--i:4">
+                <button type="button" data-q="물리학" aria-label="물리학 검색">
+                  <span class="orb" data-glyph="物"></span>
+                  <span class="sat" aria-hidden="true">→</span>
+                </button>
+                <p class="t-eyebrow"><span class="dot"></span>400</p>
+                <h3>물리학</h3>
+              </li>
+              <li class="topic reveal" style="--i:5">
+                <button type="button" data-q="예술" aria-label="예술 검색">
+                  <span class="orb" data-glyph="藝"></span>
+                  <span class="sat" aria-hidden="true">→</span>
+                </button>
+                <p class="t-eyebrow"><span class="dot"></span>600</p>
+                <h3>예술</h3>
+              </li>
+            </ul>
+          </div>
+        </section>
+
+        <!-- 층별 안내: 스타디움 프레임 -->
+        <section class="floors-sec wrap">
+          <p class="eyebrow reveal"><span class="dot"></span>층별 자료실</p>
+          <h2 class="sec-head reveal">3층과 4층,<br />어디로 가면 될까요.</h2>
+
+          <div class="floors">
+            <article class="floor f3 reveal">
+              <span class="floor-tag">3층</span>
+              <ul class="floor-list">
+                <li><span class="rm">3-1</span><span>언어(700) · 역사(900)</span></li>
+                <li><span class="rm">3-2</span><span>문학(800)</span></li>
+                <li><span class="rm">3-3</span><span>종교(200) · 사회과학(300)</span></li>
+                <li><span class="rm">3-4</span><span>사회과학(300)</span></li>
+                <li><span class="rm">북스토리</span><span>충BOOK 100선</span></li>
+              </ul>
+            </article>
+            <article class="floor f4 reveal">
+              <span class="floor-tag">4층</span>
+              <ul class="floor-list">
+                <li><span class="rm">4-1·2</span><span>자연과학(400) · 기술과학(500)</span></li>
+                <li><span class="rm">4-3·4</span><span>총류(000) · 철학(100) · 예술(600) · 서양서(전 주제)</span></li>
+              </ul>
+            </article>
+          </div>
+          <p class="intro-note">청구기호로 층·자료실을 추정해 안내하며, 실제 배치와 다를 수 있습니다.</p>
+        </section>
       </section>
 
-      <ul id="results" class="results"></ul>
-      <nav id="pager" class="pager" hidden></nav>
+      <div class="wrap">
+        <ul id="results" class="results"></ul>
+        <nav id="pager" class="pager" hidden></nav>
+      </div>
     </main>
 
     <footer class="foot">
@@ -126,7 +204,6 @@
       </div>
     </footer>
 
-    <!-- 상세 모달 -->
     <div id="modal" class="modal" hidden>
       <div class="modal-backdrop" data-close></div>
       <div class="modal-panel" role="dialog" aria-modal="true" aria-labelledby="m-title">
@@ -135,7 +212,6 @@
       </div>
     </div>
 
-    <!-- 대출 목록 -->
     <div id="cartModal" class="modal" hidden>
       <div class="modal-backdrop" data-cart-close></div>
       <div class="modal-panel" role="dialog" aria-modal="true" aria-labelledby="cart-title">
@@ -157,5 +233,6 @@
     <script src="/eggs.js"></script>
     <script src="/cart.js"></script>
     <script src="/app.js"></script>
+    <script src="/v2/v2.js"></script>
   </body>
 </html>
